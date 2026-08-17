@@ -6,6 +6,7 @@
 //! consumer, in the consumer's language.
 
 // Modules:
+pub mod install;
 pub mod version;
 
 /// Returns the crate version, so `main` and tests share one source of truth.
