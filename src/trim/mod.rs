@@ -6,4 +6,5 @@
 
 pub mod canonical;
 pub mod prototypes;
+pub mod renames;
 pub mod spec;
