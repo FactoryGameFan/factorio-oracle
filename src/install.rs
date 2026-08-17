@@ -28,10 +28,31 @@ pub fn resolve_layout(root: &Path) -> Option<InstallLayout> {
             root.join("Contents/doc-html"),
         )]
     } else if root.is_file() {
-        // A path straight to the executable, which is what FACTORIO_BIN holds.
-        // The install root is two levels up from bin/x64/factorio.
-        let base = root.parent()?.parent()?.parent()?;
-        vec![(root.to_path_buf(), base.join("data"), base.join("doc-html"))]
+        // A path straight to the executable, which is what FACTORIO_BIN holds
+        // and what a run result records as its binaryPath.
+        //
+        // Two shapes, and which one applies cannot be told from the path alone,
+        // so both are offered and the loop below keeps whichever has a data
+        // directory next to it:
+        //
+        //   macOS bundle: <app>/Contents/MacOS/factorio, data two levels up
+        //   Linux:        <base>/bin/x64/factorio,       data three levels up
+        let mut candidates = Vec::new();
+        if let Some(contents) = root.parent().and_then(|p| p.parent()) {
+            candidates.push((
+                root.to_path_buf(),
+                contents.join("data"),
+                contents.join("doc-html"),
+            ));
+        }
+        if let Some(base) = root
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+        {
+            candidates.push((root.to_path_buf(), base.join("data"), base.join("doc-html")));
+        }
+        candidates
     } else {
         // A plain install directory.
         vec![(
@@ -158,6 +179,26 @@ mod tests {
         let layout = resolve_layout(&bin).expect("should resolve");
         assert_eq!(layout.binary, bin);
         assert_eq!(layout.data_dir, root.join("data"));
+    }
+
+    #[test]
+    fn resolves_a_macos_bundles_binary_not_just_its_root() {
+        // The other binary-path shape, and the one that actually turned up: a
+        // run result records binaryPath, which on macOS is inside the bundle at
+        // Contents/MacOS/factorio. Its data directory is two levels up, not
+        // three, so the Linux derivation lands outside the bundle entirely and
+        // finds nothing.
+        let dir = tempdir().unwrap();
+        let contents = dir.path().join("factorio.app/Contents");
+        let bin = contents.join("MacOS/factorio");
+        touch(&bin);
+        fs::create_dir_all(contents.join("data")).unwrap();
+        fs::create_dir_all(contents.join("doc-html")).unwrap();
+
+        let layout = resolve_layout(&bin).expect("should resolve");
+        assert_eq!(layout.binary, bin);
+        assert_eq!(layout.data_dir, contents.join("data"));
+        assert_eq!(layout.doc_dir, contents.join("doc-html"));
     }
 
     #[test]

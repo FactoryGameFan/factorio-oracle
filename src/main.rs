@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use factorio_oracle::install;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(
@@ -34,6 +34,22 @@ enum Command {
         /// Select an install by path
         #[arg(long)]
         factorio: Option<PathBuf>,
+    },
+    /// Trim a dump into a consumer's fixture
+    Trim {
+        /// The JSON a `run` produced. Names the dump, the install and the mods.
+        #[arg(long)]
+        run: PathBuf,
+        /// The caller's trim spec
+        #[arg(long)]
+        spec: PathBuf,
+        /// Where to write the fixture
+        #[arg(long)]
+        out: PathBuf,
+        /// Report drift against `--out` and change nothing. Exits 1 on a
+        /// mismatch.
+        #[arg(long)]
+        check: bool,
     },
 }
 
@@ -126,6 +142,69 @@ fn main() -> anyhow::Result<()> {
             println!("{}", serde_json::to_string_pretty(&result)?);
             if result["ok"] != true {
                 std::process::exit(1);
+            }
+        }
+        Command::Trim {
+            run,
+            spec,
+            out,
+            check,
+        } => {
+            let run_result: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&run)?)?;
+            let trim_spec: factorio_oracle::trim::spec::TrimSpec =
+                serde_json::from_str(&std::fs::read_to_string(&spec)?)?;
+
+            let script_output = run_result["scriptOutput"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("the run result has no scriptOutput"))?;
+            let dump_path = PathBuf::from(script_output).join("data-raw-dump.json");
+            let dump: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&dump_path)?)?;
+
+            // The install is re-derived from the binary the run recorded, so
+            // the fixture cannot describe a different install than the dump.
+            let binary = run_result["provenance"]["binaryPath"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("the run result has no binaryPath"))?;
+            let layout = install::resolve_layout(Path::new(binary))
+                .ok_or_else(|| anyhow::anyhow!("could not resolve the install at {binary}"))?;
+
+            let version = run_result["provenance"]["factorioVersion"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("the run result has no factorioVersion"))?;
+            let loaded_mods: Vec<String> =
+                serde_json::from_value(run_result["loadedMods"].clone()).unwrap_or_default();
+
+            let fixture =
+                factorio_oracle::trim::build_fixture(&factorio_oracle::trim::TrimInputs {
+                    dump: &dump,
+                    spec: &trim_spec,
+                    data_dir: &layout.data_dir,
+                    doc_dir: &layout.doc_dir,
+                    factorio_version: version,
+                    loaded_mods: &loaded_mods,
+                })?;
+            let text = factorio_oracle::trim::canonical::to_canonical_json(&fixture);
+
+            if check {
+                let committed = std::fs::read_to_string(&out).unwrap_or_default();
+                if committed == text {
+                    println!("Up to date: {} matches Factorio {version}.", out.display());
+                } else {
+                    eprintln!(
+                        "DRIFT: {} does not match Factorio {version}.",
+                        out.display()
+                    );
+                    eprintln!("Re-run without --check to update it, then review what moved.");
+                    std::process::exit(1);
+                }
+            } else {
+                if let Some(parent) = out.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&out, &text)?;
+                println!("Wrote {}", out.display());
             }
         }
     }
