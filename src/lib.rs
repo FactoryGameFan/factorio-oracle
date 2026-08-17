@@ -15,6 +15,7 @@ pub mod probe;
 pub mod run;
 pub mod scaffold;
 pub mod spawn;
+pub mod trim;
 pub mod version;
 
 /// Returns the crate version, so `main` and tests share one source of truth.
