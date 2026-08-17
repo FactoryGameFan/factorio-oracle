@@ -108,12 +108,17 @@ fn main() -> anyhow::Result<()> {
                     .keep(),
             };
 
+            // The spec owns the settings and the seed. Resolving them here keeps
+            // the file and --map-gen-seed built from one value, so they cannot
+            // disagree.
+            let map_gen_settings = spec.resolved_map_gen_settings();
+
             let request = factorio_oracle::run::RunRequest {
                 spec,
                 layout: chosen.layout,
                 version: chosen.version.expect("filtered to installs with a version"),
                 work_dir: work,
-                map_gen_settings: Some(serde_json::json!({ "seed": 123456 })),
+                map_gen_settings,
             };
 
             let result =

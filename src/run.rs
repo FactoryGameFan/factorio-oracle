@@ -317,6 +317,8 @@ mod tests {
             timeout_seconds: Some(60),
             capture_active_mods: false,
             disable_mods: vec![],
+            map_gen_settings: None,
+            seed: None,
         };
 
         let request = RunRequest {
@@ -418,6 +420,8 @@ mod tests {
                     timeout_seconds: None,
                     capture_active_mods: false,
                     disable_mods: vec![],
+                    map_gen_settings: None,
+                    seed: None,
                 },
                 layout: layout_in(install.path()),
                 version: version(),
@@ -460,6 +464,8 @@ mod tests {
             timeout_seconds: None,
             capture_active_mods: false,
             disable_mods: vec![],
+            map_gen_settings: None,
+            seed: None,
         };
 
         let request = RunRequest {
@@ -490,6 +496,8 @@ mod tests {
             timeout_seconds: None,
             capture_active_mods: false,
             disable_mods: vec![],
+            map_gen_settings: None,
+            seed: None,
         };
         let request = RunRequest {
             spec,
@@ -552,6 +560,8 @@ mod tests {
             timeout_seconds: None,
             capture_active_mods: false,
             disable_mods: vec![],
+            map_gen_settings: None,
+            seed: None,
         };
         let request = RunRequest {
             spec,
