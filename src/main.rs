@@ -46,6 +46,12 @@ enum Command {
         /// Where to write the fixture
         #[arg(long)]
         out: PathBuf,
+        /// A create probe's dump, for a spec with `defines_from: probe`.
+        /// Reading defines from the running game is the only way to get the
+        /// real value, because runtime-api.json publishes a documentation
+        /// index rather than the numbers.
+        #[arg(long)]
+        probe_dump: Option<PathBuf>,
         /// Report drift against `--out` and change nothing. Exits 1 on a
         /// mismatch.
         #[arg(long)]
@@ -148,6 +154,7 @@ fn main() -> anyhow::Result<()> {
             run,
             spec,
             out,
+            probe_dump,
             check,
         } => {
             let run_result: serde_json::Value =
@@ -176,6 +183,13 @@ fn main() -> anyhow::Result<()> {
             let loaded_mods: Vec<String> =
                 serde_json::from_value(run_result["loadedMods"].clone()).unwrap_or_default();
 
+            let probe = match probe_dump {
+                Some(path) => Some(serde_json::from_str::<serde_json::Value>(
+                    &std::fs::read_to_string(&path)?,
+                )?),
+                None => None,
+            };
+
             let fixture =
                 factorio_oracle::trim::build_fixture(&factorio_oracle::trim::TrimInputs {
                     dump: &dump,
@@ -184,6 +198,7 @@ fn main() -> anyhow::Result<()> {
                     doc_dir: &layout.doc_dir,
                     factorio_version: version,
                     loaded_mods: &loaded_mods,
+                    probe_dump: probe.as_ref(),
                 })?;
             let text = factorio_oracle::trim::canonical::to_canonical_json(&fixture);
 

@@ -75,10 +75,48 @@ fn the_committed_fixture_is_reproduced_byte_for_byte() {
         doc_dir: &fixtures().join("doc-html"),
         factorio_version: EXPECTED_VERSION,
         loaded_mods: &mods,
+        probe_dump: None,
     })
     .unwrap();
 
     assert_same_bytes(&to_canonical_json(&fixture), &expected);
+}
+
+#[test]
+fn reading_defines_from_the_game_produces_the_same_bytes() {
+    // FactorioTools#83. The doc-index route infers direction values from a
+    // dense documentation ordering; the probe route reads what the game uses.
+    // Measured on 2.1.14 they agree, so adopting the sound method is a no-op on
+    // the output. This test is what makes that claim checkable rather than
+    // asserted.
+    let dump: serde_json::Value = serde_json::from_str(&read("data-raw-slice.json")).unwrap();
+    let mut spec: TrimSpec = serde_json::from_str(&read("factoriotools-trim-spec.json")).unwrap();
+    spec.defines_from = factorio_oracle::trim::spec::DefinesSource::Probe;
+
+    // Exactly what a create probe wrote on 2.1.14.
+    let probe = serde_json::json!({ "directions": {
+        "north": 0, "northnortheast": 1, "northeast": 2, "eastnortheast": 3,
+        "east": 4, "eastsoutheast": 5, "southeast": 6, "southsoutheast": 7,
+        "south": 8, "southsouthwest": 9, "southwest": 10, "westsouthwest": 11,
+        "west": 12, "westnorthwest": 13, "northwest": 14, "northnorthwest": 15
+    }});
+
+    let mods = loaded_mods();
+    let fixture = build_fixture(&TrimInputs {
+        dump: &dump,
+        spec: &spec,
+        data_dir: &fixtures().join("data"),
+        doc_dir: &fixtures().join("doc-html"),
+        factorio_version: EXPECTED_VERSION,
+        loaded_mods: &mods,
+        probe_dump: Some(&probe),
+    })
+    .unwrap();
+
+    assert_same_bytes(
+        &to_canonical_json(&fixture),
+        &read("expected-factorio-oracle-2.1.14.json"),
+    );
 }
 
 #[test]
@@ -145,6 +183,7 @@ fn the_real_install_reproduces_it_too() {
         doc_dir: &layout.doc_dir,
         factorio_version: EXPECTED_VERSION,
         loaded_mods: &mods,
+        probe_dump: None,
     })
     .unwrap();
 

@@ -63,6 +63,27 @@ pub fn collect_define(doc_dir: &Path, table: &str) -> anyhow::Result<Value> {
     ))
 }
 
+/// Reads a defines table out of a probe mod's dump.
+///
+/// This is the sound way to answer "what number means east". `collect_define`
+/// above infers it from a documentation index; this reads it from the running
+/// game, which is the only authority. FactorioTools#83.
+///
+/// The probe writes the table under a key of its own choosing, so the caller
+/// names it. Measured on 2.1.14, the values match what `order` produces, which
+/// is why adopting this changes no bytes today. It changes what happens the
+/// next time Factorio introduces a gap, a duplicate, or a non-zero start, none
+/// of which a dense index can express.
+pub fn defines_from_probe(probe_dump: &Value, key: &str) -> anyhow::Result<Value> {
+    let table = probe_dump
+        .get(key)
+        .ok_or_else(|| anyhow::anyhow!("the probe dump has no `{key}` table"))?;
+    if !table.is_object() {
+        anyhow::bail!("the probe dump's `{key}` is not an object");
+    }
+    Ok(table.clone())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,5 +144,38 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("runtime-api.json"), "got {err}");
+    }
+
+    #[test]
+    fn a_probe_dump_gives_the_value_the_game_actually_uses() {
+        // Measured on 2.1.14 with a create probe. This is a read, not an
+        // inference: only the running game knows east is 4.
+        let probe = serde_json::json!({
+            "directions": { "north": 0, "east": 4, "south": 8, "west": 12 }
+        });
+        let table = defines_from_probe(&probe, "directions").unwrap();
+        assert_eq!(table["east"], 4);
+        assert_eq!(table["west"], 12);
+    }
+
+    #[test]
+    fn a_probe_dump_can_express_what_order_cannot() {
+        // The reason the fix matters. `order` is a dense 0..n-1 index, so it
+        // cannot represent a gap, a duplicate, or a non-zero start. A real
+        // reading can.
+        let probe = serde_json::json!({ "t": { "a": 10, "b": 10, "c": 40 } });
+        let table = defines_from_probe(&probe, "t").unwrap();
+        assert_eq!(table["a"], 10);
+        assert_eq!(table["b"], 10);
+        assert_eq!(table["c"], 40);
+    }
+
+    #[test]
+    fn a_probe_dump_missing_the_table_names_it() {
+        let probe = serde_json::json!({ "other": {} });
+        let err = defines_from_probe(&probe, "directions")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("directions"), "got {err}");
     }
 }

@@ -43,6 +43,28 @@ pub struct TrimSpec {
     /// Whether to read the game's migration files into a rename table.
     #[serde(default)]
     pub include_renames: bool,
+    /// Where `defines` values come from.
+    ///
+    /// `doc-index` reads `order` out of `runtime-api.json`, which is a
+    /// documentation index rather than the runtime value. It is right only
+    /// while a table is a dense sequence from zero. `probe` reads the value the
+    /// running game uses, and needs a `create` run's dump.
+    ///
+    /// The default is `doc-index` so existing callers keep working. New callers
+    /// should choose `probe`. See FactorioTools#83.
+    #[serde(default)]
+    pub defines_from: DefinesSource,
+}
+
+/// Where defines values are read from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DefinesSource {
+    /// `order` from `runtime-api.json`. An inference, not a reading.
+    #[default]
+    DocIndex,
+    /// The value the running game reports, via a `create` probe.
+    Probe,
 }
 
 #[cfg(test)]

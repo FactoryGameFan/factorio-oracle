@@ -26,6 +26,9 @@ pub struct TrimInputs<'a> {
     pub doc_dir: &'a Path,
     pub factorio_version: &'a str,
     pub loaded_mods: &'a [String],
+    /// A `create` probe's dump, required when the spec sets
+    /// `defines_from: probe`. See FactorioTools#83.
+    pub probe_dump: Option<&'a Value>,
 }
 
 /// Builds the fixture document.
@@ -83,10 +86,19 @@ pub fn build_fixture(inputs: &TrimInputs) -> anyhow::Result<Value> {
     fixture.insert("captureInfo".to_string(), Value::Object(capture));
 
     for (output_key, table) in &inputs.spec.defines {
-        fixture.insert(
-            output_key.clone(),
-            defines::collect_define(inputs.doc_dir, table)?,
-        );
+        let value = match inputs.spec.defines_from {
+            spec::DefinesSource::DocIndex => defines::collect_define(inputs.doc_dir, table)?,
+            spec::DefinesSource::Probe => {
+                let probe = inputs.probe_dump.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "defines_from is `probe`, so a probe dump is required. Run a \
+                         create-mode probe that writes defines.{table} and pass it in."
+                    )
+                })?;
+                defines::defines_from_probe(probe, output_key)?
+            }
+        };
+        fixture.insert(output_key.clone(), value);
     }
 
     if !entities.is_empty() {
@@ -178,6 +190,7 @@ mod tests {
             doc_dir: &dirs.path().join("doc-html"),
             factorio_version: "2.1.14",
             loaded_mods: &mods,
+            probe_dump: None,
         })
         .unwrap();
 
@@ -218,6 +231,7 @@ mod tests {
             doc_dir: &dirs.path().join("doc-html"),
             factorio_version: "2.1.14",
             loaded_mods: &[],
+            probe_dump: None,
         })
         .unwrap_err()
         .to_string();
@@ -237,6 +251,7 @@ mod tests {
             doc_dir: &dirs.path().join("doc-html"),
             factorio_version: "2.1.14",
             loaded_mods: &[],
+            probe_dump: None,
         })
         .unwrap();
         assert!(fixture.get("_comment").is_none());
@@ -264,6 +279,7 @@ mod tests {
             doc_dir: &dirs.path().join("doc-html"),
             factorio_version: "2.1.14",
             loaded_mods: &[],
+            probe_dump: None,
         })
         .unwrap();
         let text = canonical::to_canonical_json(&fixture);
