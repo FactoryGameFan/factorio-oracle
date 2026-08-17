@@ -5,6 +5,9 @@
 //! against a consumer's own reimplementation, so that half stays with the
 //! consumer, in the consumer's language.
 
+// Modules:
+pub mod version;
+
 /// Returns the crate version, so `main` and tests share one source of truth.
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
