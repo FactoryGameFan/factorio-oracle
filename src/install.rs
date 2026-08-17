@@ -1,5 +1,6 @@
 //! Finding Factorio installs and working out where their pieces live.
 
+use crate::version::{parse_version_line, VersionInfo};
 use std::path::{Path, PathBuf};
 
 /// The three paths every mode needs from an install.
@@ -51,6 +52,58 @@ pub fn resolve_layout(root: &Path) -> Option<InstallLayout> {
         }
     }
     None
+}
+
+/// An install that was found, with its version if the binary would run.
+#[derive(Debug, Clone)]
+pub struct DiscoveredInstall {
+    pub layout: InstallLayout,
+    /// `None` when the binary could not be executed, which is normal on a
+    /// machine of a different architecture.
+    pub version: Option<VersionInfo>,
+}
+
+/// Every place a Factorio install is known to sit.
+///
+/// This is the union of the candidate lists found across the four consumer
+/// repos plus a stray benchmark script. Each had a different subset, so each
+/// found a different set of installs - which is the whole reason discovery is
+/// worth doing once.
+pub fn candidate_roots(home: &Path, env_bin: Option<&Path>) -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Some(bin) = env_bin {
+        roots.push(bin.to_path_buf());
+    }
+    roots.extend([
+        home.join("Library/Application Support/Steam/steamapps/common/Factorio/factorio.app"),
+        PathBuf::from("/Applications/factorio.app"),
+        home.join(".steam/steam/steamapps/common/Factorio"),
+        home.join(".factorio"),
+        PathBuf::from("/opt/factorio"),
+    ]);
+    roots.dedup();
+    roots
+}
+
+/// Reads a version by running the binary. Returns `None` if it will not run.
+pub fn read_version(binary: &Path) -> Option<VersionInfo> {
+    let output = std::process::Command::new(binary)
+        .arg("--version")
+        .output()
+        .ok()?;
+    parse_version_line(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// Finds every install on this machine.
+pub fn discover(home: &Path, env_bin: Option<&Path>) -> Vec<DiscoveredInstall> {
+    candidate_roots(home, env_bin)
+        .iter()
+        .filter_map(|root| resolve_layout(root))
+        .map(|layout| {
+            let version = read_version(&layout.binary);
+            DiscoveredInstall { layout, version }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -118,5 +171,45 @@ mod tests {
     #[test]
     fn returns_none_for_a_path_that_does_not_exist() {
         assert!(resolve_layout(Path::new("/nope/not/here")).is_none());
+    }
+
+    #[test]
+    fn env_bin_is_first_when_set() {
+        let home = Path::new("/home/someone");
+        let roots = candidate_roots(home, Some(Path::new("/opt/custom/factorio")));
+        assert_eq!(roots[0], PathBuf::from("/opt/custom/factorio"));
+    }
+
+    #[test]
+    fn covers_every_candidate_the_four_repos_used() {
+        let home = Path::new("/home/someone");
+        let roots = candidate_roots(home, None);
+        // The union of the candidate lists found across FactorioTools,
+        // FactorioMapWebUI, factorio-blueprint-editor and the stray benchmark
+        // script. Each repo had a different subset, so each found a different
+        // set of installs.
+        let expected = [
+            "/home/someone/Library/Application Support/Steam/steamapps/common/Factorio/factorio.app",
+            "/Applications/factorio.app",
+            "/home/someone/.steam/steam/steamapps/common/Factorio",
+            "/home/someone/.factorio",
+            "/opt/factorio",
+        ];
+        for want in expected {
+            assert!(
+                roots.contains(&PathBuf::from(want)),
+                "missing candidate: {want}\ngot: {roots:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn candidates_are_unique() {
+        let home = Path::new("/home/someone");
+        let roots = candidate_roots(home, None);
+        let mut seen = roots.clone();
+        seen.sort();
+        seen.dedup();
+        assert_eq!(seen.len(), roots.len(), "duplicate candidate in {roots:?}");
     }
 }
