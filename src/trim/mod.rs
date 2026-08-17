@@ -4,5 +4,6 @@
 //! module is testable with no Factorio present. The allowlists arrive from the
 //! caller: see [`spec::TrimSpec`].
 
+pub mod canonical;
 pub mod prototypes;
 pub mod spec;

@@ -18,7 +18,13 @@ path = "src/main.rs"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# arbitrary_precision keeps every number as the literal text the game wrote,
+# so `trim` can parse it with std's correctly-rounded f64::from_str instead of
+# serde_json's own parser. Measured 2026-08-17 on 2.1.14: serde_json is one ULP
+# out on Factorio's long decimal expansions, in both directions. See
+# src/trim/canonical.rs. preserve_order stays OFF: Map must remain a BTreeMap so
+# output is sorted, which is what makes --check a usable diff.
+serde_json = { version = "1", features = ["arbitrary_precision"] }
 # Not a dev-dependency: `run` without --work-dir makes a fresh temporary
 # directory, so the binary itself needs this.
 tempfile = "3"
