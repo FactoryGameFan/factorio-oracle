@@ -54,12 +54,21 @@ pub fn resolve_layout(root: &Path) -> Option<InstallLayout> {
         }
         candidates
     } else {
-        // A plain install directory.
-        vec![(
-            root.join("bin/x64/factorio"),
-            root.join("data"),
-            root.join("doc-html"),
-        )]
+        // A plain install directory. Windows and Linux share this layout and
+        // differ only in the binary's name, so both are offered and the loop
+        // below keeps whichever exists.
+        vec![
+            (
+                root.join("bin/x64/factorio.exe"),
+                root.join("data"),
+                root.join("doc-html"),
+            ),
+            (
+                root.join("bin/x64/factorio"),
+                root.join("data"),
+                root.join("doc-html"),
+            ),
+        ]
     };
 
     for (binary, data_dir, doc_dir) in candidates {
@@ -90,17 +99,33 @@ pub struct DiscoveredInstall {
 /// repos plus a stray benchmark script. Each had a different subset, so each
 /// found a different set of installs - which is the whole reason discovery is
 /// worth doing once.
+///
+/// All three platforms are listed unconditionally rather than behind
+/// `cfg!(windows)`. A path that does not exist simply fails to resolve, and
+/// keeping one list means the same build behaves the same everywhere, which
+/// matters when the tool runs under WSL and can see both sides.
+///
+/// A Steam library on a second drive is not here, because Steam records those
+/// in `libraryfolders.vdf` and parsing that is a bigger job than it is worth.
+/// Point `--factorio` or `FACTORIO_BIN` at those.
 pub fn candidate_roots(home: &Path, env_bin: Option<&Path>) -> Vec<PathBuf> {
     let mut roots: Vec<PathBuf> = Vec::new();
     if let Some(bin) = env_bin {
         roots.push(bin.to_path_buf());
     }
     roots.extend([
+        // macOS
         home.join("Library/Application Support/Steam/steamapps/common/Factorio/factorio.app"),
         PathBuf::from("/Applications/factorio.app"),
+        // Linux
         home.join(".steam/steam/steamapps/common/Factorio"),
         home.join(".factorio"),
         PathBuf::from("/opt/factorio"),
+        // Windows. Steam's default library, then the standalone installer's
+        // default. Steam is under the x86 Program Files even for the 64-bit
+        // game, because the Steam client itself is 32-bit.
+        PathBuf::from(r"C:\Program Files (x86)\Steam\steamapps\common\Factorio"),
+        PathBuf::from(r"C:\Program Files\Factorio"),
     ]);
     roots.dedup();
     roots
@@ -179,6 +204,50 @@ mod tests {
         let layout = resolve_layout(&bin).expect("should resolve");
         assert_eq!(layout.binary, bin);
         assert_eq!(layout.data_dir, root.join("data"));
+    }
+
+    #[test]
+    fn resolves_a_windows_install_directory() {
+        // Windows uses the same layout as Linux and differs only in the
+        // binary's name. Measured on a real Steam install: bin\x64\factorio.exe
+        // with data and doc-html beside it.
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("Factorio");
+        touch(&root.join("bin/x64/factorio.exe"));
+        fs::create_dir_all(root.join("data")).unwrap();
+        fs::create_dir_all(root.join("doc-html")).unwrap();
+
+        let layout = resolve_layout(&root).expect("should resolve");
+        assert_eq!(layout.binary, root.join("bin/x64/factorio.exe"));
+        assert_eq!(layout.data_dir, root.join("data"));
+        assert_eq!(layout.doc_dir, root.join("doc-html"));
+    }
+
+    #[test]
+    fn a_linux_install_still_wins_over_the_exe_candidate() {
+        // Both names are offered, so make sure adding the Windows one did not
+        // shadow the Linux case when only the extensionless binary exists.
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("factorio");
+        touch(&root.join("bin/x64/factorio"));
+        fs::create_dir_all(root.join("data")).unwrap();
+
+        let layout = resolve_layout(&root).expect("should resolve");
+        assert_eq!(layout.binary, root.join("bin/x64/factorio"));
+    }
+
+    #[test]
+    fn the_windows_steam_default_is_a_candidate() {
+        let roots = candidate_roots(Path::new("/home/someone"), None);
+        assert!(
+            roots.contains(&PathBuf::from(
+                r"C:\Program Files (x86)\Steam\steamapps\common\Factorio"
+            )),
+            "the Steam default is missing: {roots:?}"
+        );
+        // Steam's client is 32-bit, so the 64-bit game lives under the x86
+        // Program Files. Getting this wrong finds nothing on a normal install.
+        assert!(roots.iter().any(|r| r.to_string_lossy().contains("(x86)")));
     }
 
     #[test]
