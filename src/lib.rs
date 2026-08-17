@@ -9,6 +9,7 @@
 pub mod args;
 pub mod install;
 pub mod lua;
+pub mod numbers;
 pub mod outcome;
 pub mod probe;
 pub mod scaffold;
