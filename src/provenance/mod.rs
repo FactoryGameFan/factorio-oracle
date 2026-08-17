@@ -10,6 +10,7 @@
 // `check` arrives in Task 2 and `report` in Task 5. Each task adds its own
 // line here, so the crate compiles at the end of every task rather than only
 // at the end of the plan.
+pub mod check;
 pub mod manifest;
 
 use std::path::Path;
