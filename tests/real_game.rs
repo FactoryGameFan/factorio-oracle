@@ -136,6 +136,52 @@ fn a_real_create_run_answers_with_the_game() {
 }
 
 #[test]
+fn a_real_dump_data_run_reports_the_bundled_mod_set() {
+    let Some(found) = find_install() else {
+        eprintln!("skipping: no Factorio install found. Set FACTORIO_BIN to run this.");
+        return;
+    };
+
+    let work = tempfile::Builder::new()
+        .prefix("factorio-oracle-it-")
+        .tempdir()
+        .unwrap();
+
+    let spec: ProbeSpec = serde_json::from_value(serde_json::json!({
+        "mode": "dump-data",
+        "timeout_seconds": 300,
+    }))
+    .unwrap();
+
+    let request = RunRequest {
+        map_gen_settings: spec.resolved_map_gen_settings(),
+        spec,
+        layout: found.layout,
+        version: found.version.unwrap(),
+        work_dir: work.path().to_path_buf(),
+    };
+
+    let result = run_probe(&request, &RealSpawner).unwrap();
+    assert_eq!(
+        result["ok"],
+        true,
+        "the run failed: {}",
+        serde_json::to_string_pretty(&result).unwrap()
+    );
+
+    let mods: Vec<String> = serde_json::from_value(result["loadedMods"].clone()).unwrap();
+    // core is the one the active-mods prelude cannot see.
+    assert!(mods.contains(&"core".to_string()), "got {mods:?}");
+    assert!(mods.contains(&"base".to_string()), "got {mods:?}");
+
+    // The dump landed in the isolated write directory, not a shared one.
+    assert!(work
+        .path()
+        .join("write/script-output/data-raw-dump.json")
+        .is_file());
+}
+
+#[test]
 fn naming_a_mod_disabled_is_what_keeps_it_out() {
     let Some(found) = find_install() else {
         eprintln!("skipping: no Factorio install found. Set FACTORIO_BIN to run this.");

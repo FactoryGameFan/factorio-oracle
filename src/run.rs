@@ -50,6 +50,36 @@ fn read_control_lua(spec: &ProbeSpec) -> anyhow::Result<String> {
     Ok(String::new())
 }
 
+/// The mods the game reported loading, sorted and deduplicated.
+///
+/// Read from stdout rather than from the `script.active_mods` prelude, for two
+/// reasons. `dump-data` runs no mod at all, so there is no control script to
+/// host a prelude. And the prelude cannot see `core`: measured on 2.1.14, a
+/// create run reported base and the DLC but never `core`, while the game's
+/// output names it first. FactorioTools' committed fixture lists it.
+///
+/// Hand-rolled rather than a regex, to keep the dependency surface small. The
+/// line shape is `Loading mod <name> <version> (<stage>.lua)`.
+pub fn loaded_mods(stdout: &str) -> Vec<String> {
+    const MARKER: &str = "Loading mod ";
+    let mut names: Vec<String> = stdout
+        .lines()
+        .filter_map(|line| {
+            let start = line.find(MARKER)? + MARKER.len();
+            let rest = &line[start..];
+            let name = rest.split_whitespace().next()?;
+            if name.is_empty() {
+                None
+            } else {
+                Some(name.to_string())
+            }
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
 /// Runs a probe and returns the result as JSON.
 ///
 /// The return value describes the work directory rather than a single dump.
@@ -219,6 +249,7 @@ pub fn run_probe(request: &RunRequest, spawner: &dyn Spawner) -> anyhow::Result<
         "files": files,
         "exitCode": result.exit_code,
         "sentinelSeen": sentinel_seen,
+        "loadedMods": loaded_mods(&result.stdout),
         "provenance": provenance,
     });
 
@@ -440,6 +471,42 @@ mod tests {
                 "sentinel on {case} was read wrongly"
             );
         }
+    }
+
+    #[test]
+    fn loaded_mods_are_read_off_the_games_own_output() {
+        // Real lines from a 2.1.14 --dump-data run.
+        let stdout = "\
+   0.043 Loading mod core 0.0.0 (data.lua)
+   0.053 Loading mod base 2.1.14 (data.lua)
+   0.165 Loading mod recycler 2.1.14 (data.lua)
+   0.173 Loading mod base 2.1.14 (data-updates.lua)
+   0.177 Loading mod recycler 2.1.14 (data-updates.lua)
+   0.674 Prototype list checksum: 3041708406
+";
+        // Sorted and deduplicated: base loads three times across the stages.
+        assert_eq!(loaded_mods(stdout), vec!["base", "core", "recycler"]);
+    }
+
+    #[test]
+    fn loaded_mods_includes_core_which_active_mods_does_not() {
+        // This is why the report cannot come from the script.active_mods
+        // prelude. FactorioTools' committed fixture lists core, and dump-data
+        // runs no mod at all so there is no prelude to ask.
+        let stdout = "   0.043 Loading mod core 0.0.0 (data.lua)\n";
+        assert_eq!(loaded_mods(stdout), vec!["core"]);
+    }
+
+    #[test]
+    fn a_mod_name_with_a_hyphen_or_underscore_survives() {
+        let stdout = "Loading mod elevated-rails 2.1.14 (data.lua)\n\
+                      Loading mod oracle_probe 0.0.1 (data.lua)\n";
+        assert_eq!(loaded_mods(stdout), vec!["elevated-rails", "oracle_probe"]);
+    }
+
+    #[test]
+    fn output_with_no_such_lines_gives_an_empty_list() {
+        assert!(loaded_mods("nothing to see here").is_empty());
     }
 
     #[test]
