@@ -1,0 +1,91 @@
+{
+  "defines": [
+    {
+      "description": "",
+      "name": "direction",
+      "order": 14,
+      "values": [
+        {
+          "description": "",
+          "name": "east",
+          "order": 4
+        },
+        {
+          "description": "",
+          "name": "eastnortheast",
+          "order": 3
+        },
+        {
+          "description": "",
+          "name": "eastsoutheast",
+          "order": 5
+        },
+        {
+          "description": "",
+          "name": "north",
+          "order": 0
+        },
+        {
+          "description": "",
+          "name": "northeast",
+          "order": 2
+        },
+        {
+          "description": "",
+          "name": "northnortheast",
+          "order": 1
+        },
+        {
+          "description": "",
+          "name": "northnorthwest",
+          "order": 15
+        },
+        {
+          "description": "",
+          "name": "northwest",
+          "order": 14
+        },
+        {
+          "description": "",
+          "name": "south",
+          "order": 8
+        },
+        {
+          "description": "",
+          "name": "southeast",
+          "order": 6
+        },
+        {
+          "description": "",
+          "name": "southsoutheast",
+          "order": 7
+        },
+        {
+          "description": "",
+          "name": "southsouthwest",
+          "order": 9
+        },
+        {
+          "description": "",
+          "name": "southwest",
+          "order": 10
+        },
+        {
+          "description": "",
+          "name": "west",
+          "order": 12
+        },
+        {
+          "description": "",
+          "name": "westnorthwest",
+          "order": 13
+        },
+        {
+          "description": "",
+          "name": "westsouthwest",
+          "order": 11
+        }
+      ]
+    }
+  ]
+}
