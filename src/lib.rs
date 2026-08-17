@@ -9,6 +9,7 @@
 pub mod install;
 pub mod lua;
 pub mod probe;
+pub mod scaffold;
 pub mod version;
 
 /// Returns the crate version, so `main` and tests share one source of truth.
