@@ -1,34 +1,47 @@
+// Dependency automation for this repo. Most of the settings that used to be
+// written out here now come from the org preset below - schedule, timezone,
+// automerge, the security bypass, the github-actions grouping. What is left is
+// what is true about THIS repo and nowhere else.
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
-  extends: ["config:recommended"],
 
-  // One batch a week rather than a trickle. Monday morning means a failed
-  // update is looked at on a weekday, not discovered the following weekend.
-  schedule: ["* 0-8 * * 1"],
-  timezone: "America/Los_Angeles",
+  // Supplies config:recommended, helpers:pinGitHubActionDigests, the
+  // America/Los_Angeles timezone, the "before 6am on monday" batch,
+  // automerge:false, prConcurrentLimit/prHourlyLimit, dependencyDashboard,
+  // osvVulnerabilityAlerts, the rule that security fixes skip the weekly
+  // window, and the github-actions grouping.
+  // Source: https://github.com/FactoryGameFan/.github/blob/main/renovate-config.json
+  //
+  // The Monday window this replaces was `* 0-8 * * 1`, i.e. midnight to 8am;
+  // the preset's "before 6am on monday" is the same idea, two hours tighter.
+  //
+  // pinGitHubActionDigests is NEW here and is the org rule rather than a
+  // preference of this repo: three sibling repos already pin actions to a
+  // commit SHA with a `# vX.Y.Z` comment beside it. Expect one PR rewriting the
+  // single `actions/checkout@v4` in .github/workflows/ci.yml to a SHA.
+  extends: ["local>FactoryGameFan/.github:renovate-config"],
 
-  // Nothing automerges, with no exceptions. A green CI run proves the repo is
-  // consistent, not that a bump is correct - and this tool's correctness lives
-  // in fixtures captured from a game CI cannot run.
-  automerge: false,
+  // Three days of soak before anything is proposed. Nothing about this repo's
+  // toolchain forces the number - it matches the sibling Rust and npm repos so
+  // a yanked publish has time to disappear before it reaches a PR.
+  minimumReleaseAge: "3 days",
 
-  // Security fixes deliberately skip the weekly window.
   vulnerabilityAlerts: {
-    enabled: true,
-    schedule: ["at any time"],
+    // The preset already lets security fixes skip the weekly window. This drops
+    // the soak above to about a day for those rather than to zero.
+    minimumReleaseAge: "25 hours",
   },
 
-  // The toolchain pin is a deliberate control, not a stale dependency. Bumping
-  // it is a decision, so it gets its own PR rather than riding along in a batch.
   packageRules: [
     {
+      // The correctness of this tool lives in fixtures captured from the game,
+      // which CI cannot run - so a green CI run proves the crate still compiles,
+      // not that a bump is right. Batching the low-risk half keeps the reading
+      // load on the half that deserves it. Nothing automerges; see the preset.
+      description: "Group cargo patch and minor bumps into one PR.",
       matchManagers: ["cargo"],
       matchUpdateTypes: ["patch", "minor"],
       groupName: "cargo patch and minor",
-    },
-    {
-      matchManagers: ["github-actions"],
-      groupName: "github actions",
     },
   ],
 }
