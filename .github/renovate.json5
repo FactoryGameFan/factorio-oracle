@@ -1,0 +1,34 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended"],
+
+  // One batch a week rather than a trickle. Monday morning means a failed
+  // update is looked at on a weekday, not discovered the following weekend.
+  schedule: ["* 0-8 * * 1"],
+  timezone: "America/Los_Angeles",
+
+  // Nothing automerges, with no exceptions. A green CI run proves the repo is
+  // consistent, not that a bump is correct - and this tool's correctness lives
+  // in fixtures captured from a game CI cannot run.
+  automerge: false,
+
+  // Security fixes deliberately skip the weekly window.
+  vulnerabilityAlerts: {
+    enabled: true,
+    schedule: ["at any time"],
+  },
+
+  // The toolchain pin is a deliberate control, not a stale dependency. Bumping
+  // it is a decision, so it gets its own PR rather than riding along in a batch.
+  packageRules: [
+    {
+      matchManagers: ["cargo"],
+      matchUpdateTypes: ["patch", "minor"],
+      groupName: "cargo patch and minor",
+    },
+    {
+      matchManagers: ["github-actions"],
+      groupName: "github actions",
+    },
+  ],
+}

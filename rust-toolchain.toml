@@ -1,0 +1,8 @@
+# Pinned deliberately. FactorioMapWebUI pins its toolchain as a correctness
+# control, because a compiler change is a codegen change. This repo does not ship
+# wasm, so the reason here is weaker - but a shared tool that four repos rely on
+# should not change behaviour because a contributor has a different rustup default.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
