@@ -26,6 +26,9 @@ pub struct RunRequest {
     pub map_gen_settings: Option<serde_json::Value>,
 }
 
+/// What a probe raises to say it finished on purpose rather than crashed.
+const SENTINEL: &str = "DUMPED-OK";
+
 /// The dump file a `--dump-data` run writes, named by the game.
 const DUMP_DATA_FILE: &str = "data-raw-dump.json";
 /// The default dump name for a probe mod.
@@ -172,7 +175,15 @@ pub fn run_probe(request: &RunRequest, spawner: &dyn Spawner) -> anyhow::Result<
         },
     };
 
-    let sentinel_seen = result.stderr.contains("DUMPED-OK");
+    // Both streams, because the sentinel arrives on stdout. Measured 2026-08-17
+    // on 2.1.14: Factorio writes nothing to stderr at all. A control-stage
+    // error("DUMPED-OK"), a data-stage error, and an unknown command line flag
+    // all print to stdout and leave stderr at zero bytes. Checking only stderr
+    // makes this field permanently false, which is worse than not reporting it:
+    // it silently retires the one signal separating "the mod ran and finished"
+    // from "the mod crashed after writing its dump". stderr stays in the check
+    // so a future version that starts using it is still caught.
+    let sentinel_seen = result.stdout.contains(SENTINEL) || result.stderr.contains(SENTINEL);
     let facts = RunFacts {
         exit_code: result.exit_code,
         dump_exists: expected_file.is_file(),
@@ -213,6 +224,10 @@ pub fn run_probe(request: &RunRequest, spawner: &dyn Spawner) -> anyhow::Result<
 
     if let Outcome::Failed(message) = outcome {
         // The tail is the only diagnostic there is when a run produces no dump.
+        // Read stdoutTail first: measured on 2.1.14, Factorio leaves stderr
+        // empty and prints every error there is to stdout. stderrTail is kept
+        // so that a version which changes its mind is not silently missed, but
+        // an empty stderrTail means nothing on its own.
         out["error"] = json!(message);
         out["stdoutTail"] = json!(tail(&result.stdout, 4000));
         out["stderrTail"] = json!(tail(&result.stderr, 4000));
@@ -234,6 +249,12 @@ mod tests {
     /// A fake game. It asserts the argument vector, writes the dump a real game
     /// would have written, and returns the non-zero exit that DUMPED-OK causes.
     ///
+    /// The sentinel goes on stdout and stderr is left empty, because that is
+    /// what the real game does. Measured 2026-08-17 on 2.1.14, where a real
+    /// `create` run printed the whole Lua traceback to stdout and wrote zero
+    /// bytes to stderr. A fake that writes to stderr instead is not a detail:
+    /// it is the reason a stderr-only sentinel check passed every test here
+    /// while being false on every real run.
     struct FakeGame {
         write_dump_to: PathBuf,
         seen_args: RefCell<Vec<String>>,
@@ -251,8 +272,10 @@ mod tests {
             fs::write(&self.write_dump_to, br#"{"answer":42}"#)?;
             Ok(SpawnResult {
                 exit_code: Some(1),
-                stdout: String::new(),
-                stderr: "control.lua:13: DUMPED-OK".into(),
+                stdout: "Error while running event probe::on_init()\n\
+                         __probe__/control.lua:13: DUMPED-OK\n"
+                    .into(),
+                stderr: String::new(),
             })
         }
     }
@@ -339,6 +362,80 @@ mod tests {
         )
         .unwrap();
         assert_eq!(written["seed"], 123456);
+    }
+
+    /// A spawner that puts the sentinel on whichever stream the test names, and
+    /// writes the dump either way.
+    struct SentinelOn {
+        stdout: String,
+        stderr: String,
+        write_dump_to: PathBuf,
+    }
+
+    impl Spawner for SentinelOn {
+        fn run(
+            &self,
+            _binary: &Path,
+            _args: &[String],
+            _timeout: Option<Duration>,
+        ) -> anyhow::Result<SpawnResult> {
+            fs::create_dir_all(self.write_dump_to.parent().unwrap())?;
+            fs::write(&self.write_dump_to, br#"{}"#)?;
+            Ok(SpawnResult {
+                exit_code: Some(1),
+                stdout: self.stdout.clone(),
+                stderr: self.stderr.clone(),
+            })
+        }
+    }
+
+    #[test]
+    fn the_sentinel_is_found_on_stdout_which_is_where_the_game_puts_it() {
+        // Measured 2026-08-17 on 2.1.14. A create run whose control script calls
+        // error("DUMPED-OK") prints the traceback to stdout and writes zero
+        // bytes to stderr. The same held for a data-stage error and for an
+        // unknown command line flag: stderr was empty in all three.
+        //
+        // stderr stays in the check as a fallback, so a future version that
+        // starts using it is still caught rather than silently regressing this
+        // field to false.
+        for (stdout, stderr, case) in [
+            ("__p__/control.lua:11: DUMPED-OK", "", "stdout, as measured"),
+            (
+                "",
+                "__p__/control.lua:11: DUMPED-OK",
+                "stderr, as a fallback",
+            ),
+            ("nothing useful", "", "neither"),
+        ] {
+            let install = tempdir().unwrap();
+            let work = tempdir().unwrap();
+            let request = RunRequest {
+                spec: ProbeSpec {
+                    mode: Mode::Create,
+                    r#mod: None,
+                    literals: BTreeMap::new(),
+                    timeout_seconds: None,
+                    capture_active_mods: false,
+                    disable_mods: vec![],
+                },
+                layout: layout_in(install.path()),
+                version: version(),
+                work_dir: work.path().to_path_buf(),
+                map_gen_settings: None,
+            };
+            let spawner = SentinelOn {
+                stdout: stdout.to_string(),
+                stderr: stderr.to_string(),
+                write_dump_to: work.path().join("write/script-output/oracle-dump.json"),
+            };
+            let result = run_probe(&request, &spawner).unwrap();
+            let expected = case != "neither";
+            assert_eq!(
+                result["sentinelSeen"], expected,
+                "sentinel on {case} was read wrongly"
+            );
+        }
     }
 
     #[test]
