@@ -57,12 +57,27 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Check and report on fixture provenance
+    Provenance {
+        #[command(subcommand)]
+        action: ProvenanceAction,
+    },
 }
 
 #[derive(Subcommand)]
 enum InstallsAction {
     /// Print every install found, as JSON
     List,
+}
+
+#[derive(Subcommand)]
+enum ProvenanceAction {
+    /// Check a fixture directory against its PROVENANCE.json. Needs no
+    /// Factorio, and exits 1 on any finding.
+    Check {
+        /// The fixture directory. Its manifest is the PROVENANCE.json inside it.
+        dir: PathBuf,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -220,6 +235,27 @@ fn main() -> anyhow::Result<()> {
                 }
                 std::fs::write(&out, &text)?;
                 println!("Wrote {}", out.display());
+            }
+        }
+        Command::Provenance {
+            action: ProvenanceAction::Check { dir },
+        } => {
+            let manifest = factorio_oracle::provenance::manifest::load(&dir)?;
+            let on_disk = factorio_oracle::provenance::walk_fixtures(&dir)?;
+            let report = factorio_oracle::provenance::check::check(&manifest, &on_disk);
+
+            println!("{}", serde_json::to_string_pretty(&report.to_json(&dir))?);
+
+            if !report.ok() {
+                // The JSON is the interface and the summary is the error
+                // message. A consumer's CI prints stderr on a failure and
+                // nothing else, so a bare exit code would say only that
+                // something is wrong.
+                eprintln!("{} provenance findings:", dir.display());
+                for line in report.summary() {
+                    eprintln!("  {line}");
+                }
+                std::process::exit(1);
             }
         }
     }
