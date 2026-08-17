@@ -97,8 +97,13 @@ pub fn run_probe(request: &RunRequest, spawner: &dyn Spawner) -> anyhow::Result<
     fs::create_dir_all(&script_output)?;
 
     // The isolated config is what makes a stale dump impossible: write-data
-    // points at a directory that started empty.
-    fs::write(&config_path, build_config_ini(&write_data))?;
+    // points at a directory that started empty. read-data comes from the
+    // resolved layout rather than a relative token, because the token is only
+    // correct for a macOS bundle.
+    fs::write(
+        &config_path,
+        build_config_ini(&request.layout.data_dir, &write_data),
+    )?;
     if let Some(settings) = request.map_gen_settings.as_ref() {
         fs::write(&map_gen_path, serde_json::to_string_pretty(settings)?)?;
     }

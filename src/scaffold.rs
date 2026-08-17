@@ -85,13 +85,39 @@ pub fn build_mod_list(mod_name: Option<&str>, disabled: &[String]) -> Value {
 
 /// An isolated `config.ini`.
 ///
-/// `read-data` points at the install's bundled data through Factorio's own
-/// portable token, and `write-data` at a scratch directory that started empty.
-/// That second half is what makes a stale dump from an earlier capture
-/// impossible to pick up by accident.
-pub fn build_config_ini(write_data: &Path) -> String {
+/// `read-data` points at the install's bundled data and `write-data` at a
+/// scratch directory that started empty. That second half is what makes a
+/// stale dump from an earlier capture impossible to pick up by accident.
+///
+/// `read_data` must be the `data_dir` that [`resolve_layout`] worked out, not
+/// a relative token. This used to emit Factorio's portable
+/// `__PATH__executable__/../data`, which is correct for a macOS bundle
+/// (`Contents/MacOS/factorio`, data one level up) and wrong everywhere else.
+/// Windows and Linux put the binary at `bin/x64/`, so the same token resolves
+/// to `bin/data`. Measured on a real 2.1.14 Windows install, 2026-08-17:
+///
+/// ```text
+/// read-data=__PATH__executable__/../data     -> exit 1
+///     "There is no package core in V:/factorio-2.1.14/bin/data"
+/// read-data=__PATH__executable__/../../data  -> exit 0
+/// ```
+///
+/// Branching the token on layout would work, but it re-derives on this side
+/// something [`resolve_layout`] has already established, and a second copy of
+/// that knowledge is a second chance to get it wrong. An absolute path has no
+/// layout to know about, and is what both the macOS and the Windows capture
+/// used on the day this was measured, producing identical dump bytes.
+///
+/// Windows accepts either slash style here, so `Path::display()` emitting
+/// native backslashes needs no rewriting: `V:\factorio-2.1.14\data` and
+/// `V:/factorio-2.1.14/data` both exit 0 and dump the same bytes. Measured,
+/// because a backslash in an ini value is the kind of thing that gets eaten.
+///
+/// [`resolve_layout`]: crate::install::resolve_layout
+pub fn build_config_ini(read_data: &Path, write_data: &Path) -> String {
     format!(
-        "[path]\nread-data=__PATH__executable__/../data\nwrite-data={}\n",
+        "[path]\nread-data={}\nwrite-data={}\n",
+        read_data.display(),
         write_data.display()
     )
 }
@@ -190,11 +216,33 @@ mod tests {
 
     #[test]
     fn config_ini_isolates_writes_and_reads_the_bundled_data() {
-        let ini = build_config_ini(Path::new("/tmp/work/write"));
+        let ini = build_config_ini(
+            Path::new("/opt/factorio/data"),
+            Path::new("/tmp/work/write"),
+        );
         assert!(ini.contains("write-data=/tmp/work/write"));
-        // The portable token for the install's own data directory.
-        assert!(ini.contains("read-data=__PATH__executable__/../data"));
+        assert!(ini.contains("read-data=/opt/factorio/data"));
         assert!(ini.starts_with("[path]"));
+    }
+
+    #[test]
+    fn config_ini_never_emits_the_portable_token() {
+        // The token is layout-dependent: correct for a macOS bundle, wrong for
+        // the bin/x64 layout Windows and Linux use, where it resolves to
+        // bin/data and the game exits 1 with "There is no package core in".
+        // Both layouts are checked because the bug was invisible while only
+        // macOS was exercised.
+        for data_dir in [
+            "/Applications/factorio.app/Contents/data",
+            "/opt/factorio/data",
+            r"V:\factorio-2.1.14\data",
+        ] {
+            let ini = build_config_ini(Path::new(data_dir), Path::new("/tmp/w"));
+            assert!(
+                !ini.contains("__PATH__executable__"),
+                "read-data must be absolute, got: {ini}"
+            );
+        }
     }
 
     #[test]
