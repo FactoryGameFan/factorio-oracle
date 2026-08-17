@@ -12,6 +12,7 @@ pub mod lua;
 pub mod outcome;
 pub mod probe;
 pub mod scaffold;
+pub mod spawn;
 pub mod version;
 
 /// Returns the crate version, so `main` and tests share one source of truth.
