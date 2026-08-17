@@ -7,6 +7,7 @@
 
 // Modules:
 pub mod install;
+pub mod lua;
 pub mod probe;
 pub mod version;
 
