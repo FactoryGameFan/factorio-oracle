@@ -70,6 +70,13 @@ Practical notes, measured 2026-08-17:
 - It is the only source here that needs the network. That is why it can never
   gate a capture: captures must stay reproducible offline and byte for byte.
 
+## Examples
+
+- [`examples/pumpjack-terminals`](examples/pumpjack-terminals) - a `create` probe
+  that places pumpjacks in all four rotations and asks the game where the pipe
+  goes. Run against 2.0.77 and 2.1.14, it settled FactorioTools issue #81 and
+  caught a breaking runtime API change on the way.
+
 ## Scope
 
 Behavioural reverse engineering for interoperability - understanding what the

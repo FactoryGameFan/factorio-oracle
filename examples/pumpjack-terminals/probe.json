@@ -1,0 +1,11 @@
+{
+  "mode": "create",
+  "mod": {
+    "name": "pumpjack_terminals",
+    "version": "0.0.1",
+    "dependencies": ["base"],
+    "control_lua_file": "examples/pumpjack-terminals/control.lua"
+  },
+  "seed": 1,
+  "timeout_seconds": 120
+}
