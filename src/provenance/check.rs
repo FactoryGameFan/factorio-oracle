@@ -191,7 +191,15 @@ pub fn check(manifest: &Manifest, on_disk: &[String]) -> CheckReport {
         Some(_) => Ratchet::Ok,
     };
 
-    // Both sets iterate in key order, so every list is already sorted.
+    // `missing`, `dangling` and `unknown` are already sorted: each is built
+    // from iterating a `BTreeMap`/`BTreeSet`, in one pass. `malformed` is not
+    // - it is built from two passes, fixtures then not-fixtures, so it is two
+    // sorted runs concatenated rather than one sorted list. Sorted here,
+    // stably, so that a name appearing in both passes (named as both a
+    // fixture and a not-fixture, and also malformed on its own terms) keeps
+    // its two problems in the order they were found.
+    malformed.sort_by(|a, b| a.entry.cmp(&b.entry));
+
     CheckReport {
         fixtures: manifest.fixtures.len(),
         not_fixtures: manifest.not_fixtures.len(),
@@ -343,5 +351,23 @@ mod tests {
             report.missing,
             vec!["a.json".to_string(), "b.json".to_string()]
         );
+    }
+
+    #[test]
+    fn malformed_is_sorted_across_the_fixtures_and_not_fixtures_passes() {
+        // `malformed` is built in two passes - fixtures, then not-fixtures -
+        // so a name from the second pass that sorts before a name from the
+        // first pass would come back out of order without an explicit sort.
+        // `z.json` (a malformed fixture) sorts after `a.md` (a not-fixture
+        // with no reason), but is pushed first.
+        let doc = serde_json::json!({
+            "maxUnknown": 0,
+            "fixtures": { "z.json": { "factorioVersion": "2.1", "evidence": "stated" } },
+            "notFixtures": { "a.md": "   " },
+        });
+        let m: Manifest = serde_json::from_value(doc).unwrap();
+        let report = check(&m, &["z.json".to_string(), "a.md".to_string()]);
+        let names: Vec<&str> = report.malformed.iter().map(|e| e.entry.as_str()).collect();
+        assert_eq!(names, vec!["a.md", "z.json"]);
     }
 }
