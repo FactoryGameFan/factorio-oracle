@@ -6,6 +6,7 @@
 //! consumer, in the consumer's language.
 
 // Modules:
+pub mod args;
 pub mod install;
 pub mod lua;
 pub mod probe;
