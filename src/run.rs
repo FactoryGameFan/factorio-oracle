@@ -73,7 +73,10 @@ pub fn run_probe(request: &RunRequest, spawner: &dyn Spawner) -> anyhow::Result<
     let mod_name = request.spec.r#mod.as_ref().map(|m| m.name.clone());
     fs::write(
         mod_dir.join("mod-list.json"),
-        serde_json::to_string_pretty(&build_mod_list(mod_name.as_deref()))?,
+        serde_json::to_string_pretty(&build_mod_list(
+            mod_name.as_deref(),
+            &request.spec.disable_mods,
+        ))?,
     )?;
 
     if let Some(m) = request.spec.r#mod.as_ref() {
@@ -230,6 +233,7 @@ mod tests {
 
     /// A fake game. It asserts the argument vector, writes the dump a real game
     /// would have written, and returns the non-zero exit that DUMPED-OK causes.
+    ///
     struct FakeGame {
         write_dump_to: PathBuf,
         seen_args: RefCell<Vec<String>>,
@@ -289,6 +293,7 @@ mod tests {
             literals: BTreeMap::new(),
             timeout_seconds: Some(60),
             capture_active_mods: false,
+            disable_mods: vec![],
         };
 
         let request = RunRequest {
@@ -357,6 +362,7 @@ mod tests {
             literals,
             timeout_seconds: None,
             capture_active_mods: false,
+            disable_mods: vec![],
         };
 
         let request = RunRequest {
@@ -386,6 +392,7 @@ mod tests {
             literals: BTreeMap::new(),
             timeout_seconds: None,
             capture_active_mods: false,
+            disable_mods: vec![],
         };
         let request = RunRequest {
             spec,
@@ -447,6 +454,7 @@ mod tests {
             literals: BTreeMap::new(),
             timeout_seconds: None,
             capture_active_mods: false,
+            disable_mods: vec![],
         };
         let request = RunRequest {
             spec,

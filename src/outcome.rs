@@ -8,9 +8,13 @@ pub struct RunFacts {
     /// `None` when the process was killed, which is how a timeout ends.
     pub exit_code: Option<i32>,
     pub dump_exists: bool,
-    /// Whether `DUMPED-OK` appeared in stderr. Reported rather than required,
-    /// because it distinguishes "the mod ran and finished" from "the mod
-    /// crashed" - a check no existing probe makes.
+    /// Whether `DUMPED-OK` appeared in the game's output. Reported rather than
+    /// required, because it distinguishes "the mod ran and finished" from "the
+    /// mod crashed" - a check no existing probe makes.
+    ///
+    /// The caller reads both streams. Measured 2026-08-17 on 2.1.14: Factorio
+    /// writes nothing to stderr, so a check against stderr alone leaves this
+    /// permanently false.
     pub sentinel_seen: bool,
 }
 

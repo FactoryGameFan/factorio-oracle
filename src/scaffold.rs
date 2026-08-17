@@ -50,12 +50,33 @@ pub fn build_info_json(spec: &ModSpec, mod_factorio_version: &str) -> Value {
 
 /// The `mod-list.json` for an isolated mod directory.
 ///
-/// With `None`, only `base` is enabled and no probe mod exists. That is the
-/// `--dump-data` case, where the directory's whole job is to contain no user
-/// mods: mods rewrite prototypes freely, so a capture that loads them describes
-/// one person's game rather than Factorio.
-pub fn build_mod_list(mod_name: Option<&str>) -> Value {
+/// The isolation this buys is that no *user* mod loads. Mods rewrite prototypes
+/// freely, so a capture that picks up somebody's mod folder describes one
+/// person's game rather than Factorio.
+///
+/// It does not mean only what this file lists will load. Measured 2026-08-17 on
+/// 2.1.14: Factorio rewrites this file during startup and adds every mod
+/// bundled with the install that the file does not mention, with
+/// `enabled: true`. A list naming only `base` came back naming base,
+/// elevated-rails, quality, recycler and space-age, and all of them loaded.
+/// **Omission means enabled.**
+///
+/// An explicit `enabled: false` is honoured, which is why `disabled` exists. In
+/// the same measurement, listing elevated-rails, quality and space-age as
+/// disabled kept all three out of the load order, while recycler, left
+/// unmentioned, was added and loaded.
+///
+/// Disabling nothing is the right default: it reproduces a default install,
+/// which is what the consumers' committed fixtures were captured against.
+pub fn build_mod_list(mod_name: Option<&str>, disabled: &[String]) -> Value {
     let mut mods = vec![json!({ "name": "base", "enabled": true })];
+    for name in disabled {
+        // base is what everything else depends on, so refusing to disable it
+        // avoids writing a file that cannot describe a runnable game.
+        if name != "base" {
+            mods.push(json!({ "name": name, "enabled": false }));
+        }
+    }
     if let Some(name) = mod_name {
         mods.push(json!({ "name": name, "enabled": true }));
     }
@@ -111,10 +132,14 @@ mod tests {
     }
 
     #[test]
-    fn mod_list_with_no_probe_enables_only_base() {
+    fn mod_list_with_no_probe_names_base_and_nothing_else() {
         // This is the dump-data case: the directory exists to be empty of user
         // mods, because mods rewrite prototypes freely.
-        let list = build_mod_list(None);
+        //
+        // Naming only base does NOT give a base-only game. Measured on 2.1.14,
+        // Factorio adds every bundled mod this file omits and enables it. The
+        // guard here is against user mods, not against the DLC.
+        let list = build_mod_list(None, &[]);
         assert_eq!(list["mods"].as_array().unwrap().len(), 1);
         assert_eq!(list["mods"][0]["name"], "base");
         assert_eq!(list["mods"][0]["enabled"], true);
@@ -122,7 +147,7 @@ mod tests {
 
     #[test]
     fn mod_list_with_a_probe_enables_both() {
-        let list = build_mod_list(Some("bp_probe"));
+        let list = build_mod_list(Some("bp_probe"), &[]);
         let names: Vec<&str> = list["mods"]
             .as_array()
             .unwrap()
@@ -130,6 +155,37 @@ mod tests {
             .map(|m| m["name"].as_str().unwrap())
             .collect();
         assert_eq!(names, vec!["base", "bp_probe"]);
+    }
+
+    #[test]
+    fn a_mod_is_only_kept_out_by_naming_it_disabled() {
+        // Measured on 2.1.14: an explicit enabled:false is honoured, and an
+        // omission is not. So this is the only way to get a smaller game than
+        // the install ships with.
+        let list = build_mod_list(
+            Some("bp_probe"),
+            &["space-age".to_string(), "quality".to_string()],
+        );
+        let by_name: std::collections::BTreeMap<&str, bool> = list["mods"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| (m["name"].as_str().unwrap(), m["enabled"].as_bool().unwrap()))
+            .collect();
+        assert!(by_name["base"]);
+        assert!(by_name["bp_probe"]);
+        assert!(!by_name["space-age"]);
+        assert!(!by_name["quality"]);
+    }
+
+    #[test]
+    fn base_is_never_written_as_disabled() {
+        // Everything depends on base, so a file disabling it cannot describe a
+        // game that runs.
+        let list = build_mod_list(None, &["base".to_string()]);
+        assert_eq!(list["mods"].as_array().unwrap().len(), 1);
+        assert_eq!(list["mods"][0]["name"], "base");
+        assert_eq!(list["mods"][0]["enabled"], true);
     }
 
     #[test]

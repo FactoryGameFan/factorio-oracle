@@ -65,6 +65,18 @@ pub struct ProbeSpec {
     /// safe default is to record what loaded and let a consumer opt out.
     #[serde(default = "default_true")]
     pub capture_active_mods: bool,
+    /// Bundled mods to turn off, by name, for example `space-age`.
+    ///
+    /// Naming them is the only way to switch them off. Measured 2026-08-17 on
+    /// 2.1.14: Factorio rewrites `mod-list.json` on every run, and any bundled
+    /// mod missing from the file is added back with `enabled: true`. Writing a
+    /// list of just `base` therefore does not produce a base-only game, it
+    /// produces the full DLC set. An explicit `enabled: false` is honoured.
+    ///
+    /// Empty by default, which loads what a default install loads. That is what
+    /// the consumers' committed fixtures were captured against.
+    #[serde(default)]
+    pub disable_mods: Vec<String>,
 }
 
 fn default_true() -> bool {
