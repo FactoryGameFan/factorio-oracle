@@ -13,7 +13,7 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # No toolchain action: rust-toolchain.toml is honoured by the preinstalled
       # rustup, so the pin stays the single source of truth.
