@@ -5,6 +5,7 @@
 //! caller: see [`spec::TrimSpec`].
 
 pub mod canonical;
+pub mod defines;
 pub mod prototypes;
 pub mod renames;
 pub mod spec;
