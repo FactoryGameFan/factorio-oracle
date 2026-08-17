@@ -58,17 +58,25 @@ Fresh Paint", is the post that explains it, and the same release added
 `use_mirroring` and `migrate_horizontal_mirroring` to that prototype. Reading it
 is how you learn the change is about entity mirroring rather than a typo fix.
 
+**Search is the way in**: `https://factorio.com/blog/search/<term>`. It covers
+the whole archive, not just recent posts - a search for `mirroring` returns
+FFF #80, from 2015.
+
 Practical notes, measured 2026-08-17:
 
-- The feed is Atom, at <https://factorio.com/blog/rss>, served as
-  `application/atom+xml`.
-- It carries the **10 most recent posts only**. It is a what-changed-lately
-  feed, not an archive, so it cannot answer "what shipped in version X" on its
-  own.
-- Each entry embeds the full post body, so recent posts need no second fetch.
-- Older posts live at `https://factorio.com/blog/post/fff-<number>`.
-- It is the only source here that needs the network. That is why it can never
-  gate a capture: captures must stay reproducible offline and byte for byte.
+- Search returns HTML, not JSON, with about 10 results and no total shown.
+- **Word choice matters more than you would expect.** Searching `mirroring`
+  does *not* return FFF #442, the post that introduced entity mirroring, while
+  `flip` and `fluid` both do. Try two or three wordings before concluding a post
+  does not exist. A bare number works too: `search/442`.
+- Direct post URLs are `https://factorio.com/blog/post/fff-<number>`.
+- There is an Atom feed at <https://factorio.com/blog/rss>, served as
+  `application/atom+xml`, with each entry embedding the full post body. It
+  carries the **10 most recent posts only**, so it answers "what changed lately"
+  rather than "what shipped in version X". Use the search for that.
+- The blog is the only source here that needs the network. That is why it can
+  never gate a capture: captures must stay reproducible offline and byte for
+  byte.
 
 ## Examples
 
