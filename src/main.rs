@@ -57,12 +57,39 @@ enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Check and report on fixture provenance
+    Provenance {
+        #[command(subcommand)]
+        action: ProvenanceAction,
+    },
 }
 
 #[derive(Subcommand)]
 enum InstallsAction {
     /// Print every install found, as JSON
     List,
+}
+
+#[derive(Subcommand)]
+enum ProvenanceAction {
+    /// Check a fixture directory against its PROVENANCE.json. Needs no
+    /// Factorio, and exits 1 on any finding.
+    Check {
+        /// The fixture directory. Its manifest is the PROVENANCE.json inside it.
+        dir: PathBuf,
+    },
+    /// Compare each fixture's recorded version against an install. Always
+    /// exits 0, because deciding whether a version gap matters needs a human.
+    Report {
+        /// The fixture directory
+        dir: PathBuf,
+        /// Select an install by version, for example 2.0.77
+        #[arg(long)]
+        version: Option<String>,
+        /// Select an install by path
+        #[arg(long)]
+        factorio: Option<PathBuf>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -83,7 +110,7 @@ fn main() -> anyhow::Result<()> {
                         "binary": d.layout.binary,
                         "dataDir": d.layout.data_dir,
                         "docDir": d.layout.doc_dir,
-                        "version": d.version.as_ref().map(|v| format!("{}.{}.{}", v.major, v.minor, v.patch)),
+                        "version": d.version.as_ref().map(|v| v.triple()),
                         "modFactorioVersion": d.version.as_ref().map(|v| v.major_minor()),
                         "buildLine": d.version.as_ref().map(|v| v.line.clone()),
                     })
@@ -107,17 +134,13 @@ fn main() -> anyhow::Result<()> {
             let spec: factorio_oracle::probe::ProbeSpec =
                 serde_json::from_str(&std::fs::read_to_string(&probe)?)?;
 
-            let installs = install::discover(&home, factorio.as_deref().or(env_bin.as_deref()));
-            let chosen = installs
-                .into_iter()
-                .find(|d| match (&version, &d.version) {
-                    (Some(want), Some(got)) => {
-                        format!("{}.{}.{}", got.major, got.minor, got.patch) == *want
-                    }
-                    (None, Some(_)) => true,
-                    _ => false,
-                })
-                .ok_or_else(|| anyhow::anyhow!("no Factorio install matched"))?;
+            let chosen = install::select(
+                &home,
+                factorio.as_deref(),
+                env_bin.as_deref(),
+                version.as_deref(),
+            )
+            .ok_or_else(|| anyhow::anyhow!("no Factorio install matched"))?;
 
             let work = match work_dir {
                 Some(dir) => {
@@ -221,6 +244,65 @@ fn main() -> anyhow::Result<()> {
                 std::fs::write(&out, &text)?;
                 println!("Wrote {}", out.display());
             }
+        }
+        Command::Provenance {
+            action: ProvenanceAction::Check { dir },
+        } => {
+            let manifest = factorio_oracle::provenance::manifest::load(&dir)?;
+            let on_disk = factorio_oracle::provenance::walk_fixtures(&dir)?;
+            let report = factorio_oracle::provenance::check::check(&manifest, &on_disk);
+
+            println!("{}", serde_json::to_string_pretty(&report.to_json(&dir))?);
+
+            if !report.ok() {
+                // The JSON is the interface and the summary is the error
+                // message. A consumer's CI prints stderr on a failure and
+                // nothing else, so a bare exit code would say only that
+                // something is wrong.
+                eprintln!("{} provenance findings:", dir.display());
+                for line in report.summary() {
+                    eprintln!("  {line}");
+                }
+                std::process::exit(1);
+            }
+        }
+        Command::Provenance {
+            action:
+                ProvenanceAction::Report {
+                    dir,
+                    version,
+                    factorio,
+                },
+        } => {
+            let manifest = factorio_oracle::provenance::manifest::load(&dir)?;
+            let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
+            let env_bin = std::env::var_os("FACTORIO_BIN").map(PathBuf::from);
+
+            // No install is an error, because there is nothing to compare
+            // against. Every comparison result is not: the whole point of this
+            // half is that a version gap is a finding for a human, not a
+            // failing build.
+            let chosen = install::select(
+                &home,
+                factorio.as_deref(),
+                env_bin.as_deref(),
+                version.as_deref(),
+            )
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no Factorio install matched, so there is nothing to compare against"
+                )
+            })?;
+            let found = chosen
+                .version
+                .expect("select filters to installs with a version");
+
+            print!(
+                "{}",
+                factorio_oracle::provenance::report::render(
+                    &factorio_oracle::provenance::report::compare(&manifest, &found.triple())
+                )
+            );
         }
     }
     Ok(())

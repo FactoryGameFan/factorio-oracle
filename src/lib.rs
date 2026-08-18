@@ -12,6 +12,7 @@ pub mod lua;
 pub mod numbers;
 pub mod outcome;
 pub mod probe;
+pub mod provenance;
 pub mod run;
 pub mod scaffold;
 pub mod spawn;

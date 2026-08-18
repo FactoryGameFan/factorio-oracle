@@ -1,0 +1,102 @@
+{
+  "_comment": [
+    "Which Factorio each fixture's ground truth was captured from.",
+    "This lives beside the fixtures rather than inside them because most of",
+    "them are verbatim copies of the game's own JSON, asserted byte for byte",
+    "by tests/acceptance.rs. A metadata key added inside one would be data",
+    "pollution, not annotation.",
+    "Every file in this tree is named, either here or in notFixtures. There is",
+    "no extension filter: FactorioMapWebUI's manifest globs .json and .png, and",
+    "eight captured map exchange strings have sat unrecorded in its fixture",
+    "directory as a result.",
+    "maxUnknown is a ratchet, not a cap. It fails if it is exceeded, and it",
+    "fails if the count drops below it and the number is not lowered.",
+    "An entry is a record of the moment a fixture was captured, not a live",
+    "claim. Never edit one to make it current, and never edit one to make a",
+    "test pass. A mismatch is a finding.",
+    "Enforced by tests/provenance.rs. Compare against an installed binary with",
+    "'factorio-oracle provenance report tests/fixtures'."
+  ],
+  "maxUnknown": 0,
+  "fixtures": {
+    "data-raw-slice.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "captured 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'factorio-oracle run' with a dump-data probe produced a 28 MB data-raw-dump.json, reduced here to the ten entity names FactorioTools asks for, taken from every prototype type that carries one, plus the key set of 'module'"
+    },
+    "data/base/migrations/1.1.0.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/base/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "data/base/migrations/1.2.0 stack inserter rename.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/base/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "data/base/migrations/2.0.0-biter-egg.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/base/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "data/base/migrations/2.0.0-internal.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/base/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "data/base/migrations/2.0.0-internal2.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/base/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "data/base/migrations/2.0.0-internal3.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/base/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "data/base/migrations/2.0.0.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/base/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "data/space-age/migrations/aquilo-tilesets.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/space-age/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "data/space-age/migrations/biolab.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/space-age/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "data/space-age/migrations/cargo-bay-that-allows-inserters-to-remove-items.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/space-age/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "data/space-age/migrations/internal.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/space-age/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "data/space-age/migrations/jelly-yum-rename.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/space-age/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "data/space-age/migrations/ore-melting.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/space-age/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "data/space-age/migrations/shattered-planet.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/space-age/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "data/space-age/migrations/tree-seed.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/space-age/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "data/space-age/migrations/tungsten-belt-rename.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied verbatim 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam). 'diff -rq' against the install's own data/space-age/migrations reports no differing file; only the .lua and .txt siblings were left behind"
+    },
+    "doc-html/runtime-api.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "captured 2026-08-17 from Factorio 2.1.14 (build 87180, mac-arm64, steam)'s own doc-html/runtime-api.json, reduced to the single 'direction' entry of the 'defines' array. The full file carries 1,554 entries across several megabytes"
+    },
+    "expected-factorio-oracle-2.1.14.json": {
+      "factorioVersion": "2.1.14",
+      "evidence": "copied 2026-08-17 from FactorioTools' committed test/FactorioTools.Test/OilField/factorio-oracle.json, which tools/capture-factorio-oracle.sh produced against Factorio 2.1.14. tests/acceptance.rs rebuilds it byte for byte from the slice beside it, so this version claim is checked on every run rather than asserted once"
+    }
+  },
+  "notFixtures": {
+    "factoriotools-trim-spec.json": "not ground truth. A caller's config, transcribed by hand from FactorioTools' tools/trim-factorio-oracle.py allowlists. Nothing in it comes from the game, so any captured-from version would be a false claim"
+  }
+}

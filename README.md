@@ -78,6 +78,45 @@ Practical notes, measured 2026-08-17:
   never gate a capture: captures must stay reproducible offline and byte for
   byte.
 
+## Provenance
+
+A fixture that does not say which Factorio produced it is a number with no
+claim attached. Provenance records that, in a `PROVENANCE.json` beside the
+fixtures rather than inside them: most fixtures are verbatim copies of the
+game's own JSON, asserted byte for byte, so a metadata key added inside one
+would be data pollution.
+
+```bash
+# Structural check. No Factorio needed. Exits 1 on a finding.
+factorio-oracle provenance check tests/fixtures
+
+# Version comparison. Needs an install. Always exits 0.
+factorio-oracle provenance report tests/fixtures
+```
+
+Enforcement splits in two on purpose. `check` answers questions a machine can
+settle - is every file recorded, does every entry name a file that exists, is
+every entry well formed, and has the `unknown` count grown - so it runs in CI
+with no game. `report` answers a question a machine cannot: a fixture captured
+on 2.1.11 is not wrong because the binary moved on, it just has not been
+re-validated since, and whether that matters depends on whether the subsystem
+changed. So it never fails a build.
+
+Two required keys per entry, `factorioVersion` and `evidence`. Any other key is
+carried through and never validated. `evidence` is free text; the grade that is
+enforced is `factorioVersion: "unknown"`, and `maxUnknown` caps how many entries
+may say it. That number is a ratchet, not a cap: the check fails if the count
+rises above it and also if the count drops below it and the number is not
+lowered.
+
+Every file in the tree needs an entry. A file that is deliberately not ground
+truth goes in `notFixtures` with a reason. There is no extension filter,
+because an ignore rule that costs nothing gets used without thinking.
+
+**A fixture's provenance is a record of the moment it was captured, not a live
+claim.** Never edit one to make it current, and never edit one to make a test
+pass. A mismatch is a finding.
+
 ## Examples
 
 - [`examples/pumpjack-terminals`](examples/pumpjack-terminals) - a `create` probe

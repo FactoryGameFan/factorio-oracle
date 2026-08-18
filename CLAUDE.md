@@ -45,8 +45,16 @@ cargo run -- run  --probe dump-data.json --work-dir /tmp/w > /tmp/run.json
 cargo run -- trim --run /tmp/run.json --spec trim-spec.json --out fixture.json [--check]
 ```
 
-Test counts to expect: **113 unit tests**, plus **6 install-gated integration
-tests** (3 in `tests/acceptance.rs`, 3 in `tests/real_game.rs`).
+Test counts to expect: **159 unit tests**, plus **8 integration tests** split
+across three files. `tests/acceptance.rs` has 3: two run offline against a
+committed fixture, and one (`the_real_install_reproduces_it_too`) is
+install-gated. `tests/provenance.rs` has 2: one always-on, and one gated on
+the `FACTORIO_ORACLE_PROVENANCE_DIR` environment variable naming another
+repo's fixture directory - not an install gate, so it skips even when
+Factorio is present. `tests/real_game.rs` has 3, all install-gated. That is
+**4 install-gated tests** in total. Without a real Factorio install they skip
+rather than fail, so a green run on a machine with no game proves less than it
+looks. Check which happened before trusting it.
 
 ## Layout
 
@@ -63,6 +71,7 @@ tests** (3 in `tests/acceptance.rs`, 3 in `tests/real_game.rs`).
 | `run.rs` | Wiring the pure builders to disk and a spawner |
 | `numbers.rs` | Preserving the bits the game produced |
 | `trim/` | Cutting a full `data.raw` dump down to a consumer's slice |
+| `provenance/` | Which Factorio each fixture came from, and whether that record is still honest |
 
 Five run modes, and **the success predicate differs per mode**: `dump-data`
 (no mod at all, the mod dir exists only to be empty), `create`, `interactive`
@@ -124,6 +133,48 @@ code did. **A fake can only be wrong in the ways its author already considered.*
 - **`loadedMods` cannot come from the active-mods prelude**, because
   `script.active_mods` never reports `core` and the fixtures list it. Grep the
   game's stdout for `Loading mod <name>`.
+- **A real provenance manifest has two keys per entry, not eight.** Measured
+  2026-08-17 across FactorioMapWebUI's 100 entries: every one carries
+  `factorioVersion` and `evidence`, and `factorioBuild`, `branch`,
+  `loadedMods`, `capturedOn`, `capturedBy` and `targetVersionRange` appear zero
+  times. The design sketched all eight. A checker requiring the sketch would
+  reject the only real manifest there is, so the other six are optional and
+  carried through untouched.
+- **`evidence` is free text, and enforcing a grade would reject 48 of 100.**
+  First word across the same 100 entries: `stated` 48, `captured` 34,
+  `RE-CAPTURED` 8, `inferred` 4, `re-captured` 3, `UNDOCUMENTED` 1, and twice
+  it is just `the`. The design's enum was `stated | inferred | unknown`, which
+  accepts 52 of the 100 first words and rejects the other 48. The grade that
+  is real is `factorioVersion: "unknown"`, which is a field, and that is what
+  the ratchet counts.
+- **An extension allowlist is how ground truth goes unrecorded.** MapWebUI's
+  provenance test globs `.json` and `.png`. Its fixture directory also holds 10
+  `.txt` map exchange strings, and **8 of the 10 are read as ground truth** by
+  `decode.spec.ts`, `encode.spec.ts` and `jsonExport.spec.ts`. None has an
+  entry and none can get one while the glob decides. So this tool names every
+  file, and a deliberate non-fixture goes in `notFixtures` with a reason.
+- **Manifest keys are relative paths, not bare filenames.** The design says
+  bare filenames, which is true of MapWebUI's flat directory and was never
+  tested against a tree. This crate's own `tests/fixtures/` is two levels deep.
+  The walk joins components with `/` by hand rather than using
+  `Path::display()`, so a Windows run and a macOS run produce the same
+  committed key.
+- **The walk skips dotfiles and dot-directories, plus two Windows names, and
+  that is load-bearing on both platforms.** `.DS_Store` appears in any
+  directory a Finder window has opened; demanding an entry for it would make
+  the check fail on the machine that can fix it and pass in CI. The skip
+  `continue`s before the directory branch, so a dot-prefixed name is skipped
+  whole even when it is a directory - a consumer keeping fixtures under
+  `.golden/` gets nothing recorded for that subtree, not an error. `Thumbs.db`
+  and `desktop.ini` (matched case-insensitively) are skipped for the same
+  reason on Windows: Explorer writes `Thumbs.db` into any folder of images it
+  has thumbnailed, and MapWebUI's fixture directory holds `.png` files.
+- **`#[serde(flatten)]` works under `arbitrary_precision`.** Measured
+  2026-08-17: a struct with two named string fields plus a flattened
+  `BTreeMap<String, Value>` parsed a document holding both an integer and a
+  decimal, with no error. Recorded as a negative result so nobody spends an
+  afternoon ruling it out. Provenance entries stay a `Value` anyway, because
+  only two keys are required and the rest must round-trip untouched.
 
 ### Writing Lua for a probe
 
