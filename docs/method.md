@@ -165,6 +165,14 @@ into an 8-versus-0 finding.
 
 **If a control fails, suspect the question first.**
 
+A control comparing a table recovered from the game against a repo's own seeding
+reimplementation failed outright on 2026-08-18, and read like a defect in the
+recovery. The control was malformed. The repo's fixture stores a canonical gauge,
+its `a` table starting `0,1,2,4,8,16,32,15`, while the reimplementation returns
+the game's own tables. Both produce identical noise, so equality was never the
+right test. The real control is gauge *equivalence*, checked across all 65,536
+lattice cells, and it passes. (FactorioMapWebUI #234)
+
 ## Ask what a limit is before comparing it to a number
 
 `zoom_limits` has three fields, not two, and they are not all the same kind of
@@ -215,6 +223,37 @@ that it should be an expected outcome rather than a surprise.
   entities. It does not.
 
 A probe that only ever confirms the plan is not being pointed at anything.
+
+## An inversion is a model, and a wrong one still returns a full set of numbers
+
+FactorioMapWebUI's notes said a sample at `(I + 1/256, J)` "isolates the `(I,J)`
+corner" of `basis_noise`. It does not. `d` in the game's kernel is the *squared*
+distance, so the corner at `(1,0)` sits at `d = 0.9922`, inside the falloff's
+support, and contributes about 1.2e-4 of the near term - 1,014 times f32 epsilon.
+Isolation is not merely awkward, it is impossible: leaving one corner live needs
+`fy^2 > fx` and `fx^2 > fy` at once, which forces `fy > 1`.
+
+**Measured 2026-08-18.** The one-corner inversion recovers 2 of 256 slots. It
+raises nothing and looks entirely healthy: 512 numbers, every one of plausible
+size. Handling both corners and iterating twice recovers 248, and a 1-ULP search
+scored against the probe's own samples reaches 254 with a worst error of 3.6e-12.
+
+Two rules come out of that:
+
+- **A `~=` in someone else's notes is a claim about a model, not a rounding.**
+  Check the arithmetic of the kernel before building on the approximation. Here
+  it cost an afternoon of simulation and no game runs at all, which is the
+  cheapest question that settles it.
+- **Score against something the method never read.** The recovery never opens
+  the fixture it is later scored on, and samples different coordinates entirely,
+  so 512 of 512 exact is a test rather than a fit. That is stronger than holding
+  points back, because there is nothing left to leak.
+
+**Know what the method cannot see, and price it.** Two of the 256 slots are
+near zero, `-1.8e-7` and `5.0e-8`, and no probe geometry can pin them: their ULP
+is 3.6e-15 and the game returns f32. Perturbing both by 1.0e-9, 280 times the
+residual, changes 0 of the 512 fixture values. A limit that has been measured to
+cost nothing is a documented limit, not an open question.
 
 ## Fixture policy
 

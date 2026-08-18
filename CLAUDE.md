@@ -50,7 +50,7 @@ cargo run -- refs worktree 2.0.77          # a real tree, under the cache
 cargo run -- refs docs 2.1.14 runtime-api.json --which
 ```
 
-Test counts to expect: **247 unit tests**, plus **13 integration tests** split
+Test counts to expect: **255 unit tests**, plus **13 integration tests** split
 across four files. `tests/acceptance.rs` has 3: two run offline against a
 committed fixture, and one (`the_real_install_reproduces_it_too`) is
 install-gated. `tests/provenance.rs` has 3: one always-on; one gated on the
@@ -107,6 +107,14 @@ code did. **A fake can only be wrong in the ways its author already considered.*
   `error("DUMPED-OK")` sentinel, goes to stdout. Measured three ways on 2.1.14,
   and again on Windows: stderr was zero bytes every time. The original code
   checked stderr, so the sentinel was never seen on any real run.
+- **A `create` run's failure message splits on the sentinel, because the sentinel
+  rules out the usual cause.** A mod skipped over a `factorio_version` mismatch
+  never runs, so it cannot raise `DUMPED-OK`. Measured 2026-08-18 on the first
+  probe a consumer wrote: it called
+  `helpers.write_file("basis-gradient-probe.json")`, raised the sentinel, and got
+  back "no dump was written ... factorio_version mismatch" while its 270 KB sat
+  in the report's own `files` array. `create` keys success off the one filename
+  `oracle-dump.json`, which is this tool's contract rather than the game's.
 - **Omission in `mod-list.json` means enabled.** Factorio rewrites the file at
   startup and adds back every bundled mod the file does not mention, with
   `enabled: true`. A file naming only `base` comes back naming five, all loaded.

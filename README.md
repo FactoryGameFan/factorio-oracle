@@ -201,6 +201,11 @@ They are prose for a person, not input to anything.
 - [`docs/gotchas.md`](docs/gotchas.md) - specific facts about Factorio and its
   API, each of which cost a failed run.
 
+One thing to know before reading them: a probe's `control.lua` must write its
+result as `oracle-dump.json`. That name is this tool's contract, not the game's -
+`helpers.write_file` accepts any name, and a `create` run reports failure unless
+that one file appears.
+
 Lifted with attribution from `factorio-blueprint-editor` and `FactorioMapWebUI`,
 which learned most of it the expensive way. That borrowing had been done by hand,
 repo to repo, and drifted; this gives it one home.

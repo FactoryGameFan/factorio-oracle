@@ -1,6 +1,7 @@
 //! Deciding whether a run succeeded. The rule is per mode, not global.
 
 use crate::probe::Mode;
+use crate::run::{PROBE_DUMP_FILE, SENTINEL};
 
 /// What was observed after the process ended.
 #[derive(Debug, Clone)]
@@ -38,12 +39,30 @@ pub fn evaluate(mode: Mode, facts: &RunFacts) -> Outcome {
         Mode::Create => {
             if facts.dump_exists {
                 Outcome::Ok
+            } else if facts.sentinel_seen {
+                // The sentinel rules the usual cause out. A mod skipped over a
+                // factorio_version mismatch never runs, so it cannot raise one;
+                // seeing it means the probe ran and finished on purpose. Naming
+                // the mismatch here would send a reader to look at `info.json`
+                // when the mod demonstrably loaded.
+                //
+                // Measured 2026-08-18, the first probe written by a consumer:
+                // it called helpers.write_file("basis-gradient-probe.json"),
+                // raised the sentinel, and got back "no dump was written ...
+                // factorio_version mismatch". The 270 KB it had just written was
+                // listed in the report's own `files` array the whole time.
+                Outcome::Failed(format!(
+                    "the probe raised {SENTINEL} but no {PROBE_DUMP_FILE} exists. \
+                     It ran and finished, so this is not a factorio_version mismatch. \
+                     Check the name given to helpers.write_file against this report's \
+                     `files` list: the dump must be written as {PROBE_DUMP_FILE}."
+                ))
             } else {
-                Outcome::Failed(
-                    "no dump was written. The most common cause is a factorio_version \
+                Outcome::Failed(format!(
+                    "no {PROBE_DUMP_FILE} was written, and the probe never raised \
+                     {SENTINEL}. The most common cause is a factorio_version \
                      mismatch, which makes Factorio skip the mod in silence."
-                        .to_string(),
-                )
+                ))
             }
         }
 
@@ -89,6 +108,37 @@ mod tests {
     fn create_fails_when_no_dump_was_written() {
         let out = evaluate(Mode::Create, &facts(Some(1), false, false));
         assert!(matches!(out, Outcome::Failed(_)));
+    }
+
+    #[test]
+    fn a_create_failure_with_no_sentinel_names_the_version_mismatch() {
+        // Nothing ran, so the silent skip really is the first thing to check.
+        let Outcome::Failed(why) = evaluate(Mode::Create, &facts(Some(1), false, false)) else {
+            panic!("expected a failure");
+        };
+        assert!(why.contains("factorio_version"), "{why}");
+        assert!(why.contains(PROBE_DUMP_FILE), "{why}");
+    }
+
+    #[test]
+    fn a_create_failure_after_the_sentinel_rules_the_version_mismatch_out() {
+        // The mod ran to its own last line, so info.json is not the place to
+        // look. The first consumer probe landed exactly here by writing its
+        // dump under another name.
+        let Outcome::Failed(why) = evaluate(Mode::Create, &facts(Some(1), false, true)) else {
+            panic!("expected a failure");
+        };
+        assert!(
+            why.contains("not a factorio_version mismatch"),
+            "the sentinel excludes that cause: {why}"
+        );
+        assert!(
+            !why.contains("most common cause"),
+            "that is the other arm's claim: {why}"
+        );
+        assert!(why.contains(SENTINEL), "{why}");
+        assert!(why.contains("helpers.write_file"), "{why}");
+        assert!(why.contains(PROBE_DUMP_FILE), "{why}");
     }
 
     #[test]
