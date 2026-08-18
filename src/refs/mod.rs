@@ -11,6 +11,8 @@
 //! because `master`'s `base/info.json` happens to equal the newest tag. That
 //! is a coincidence, and it is the failure this module exists to remove.
 
+pub mod git;
+
 use std::path::{Path, PathBuf};
 
 /// The directory this tool keeps things it can fetch or build again.
