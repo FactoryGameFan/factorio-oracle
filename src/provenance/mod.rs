@@ -12,6 +12,7 @@
 // at the end of the plan.
 pub mod check;
 pub mod manifest;
+pub mod report;
 
 use std::path::Path;
 

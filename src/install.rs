@@ -152,6 +152,35 @@ pub fn discover(home: &Path, env_bin: Option<&Path>) -> Vec<DiscoveredInstall> {
         .collect()
 }
 
+/// Whether a discovered install answers to `version`.
+///
+/// An install whose binary would not run has no version, and is never picked:
+/// every command here needs the version, either to stamp it or to build a mod
+/// that declares it.
+pub fn matches_version(found: &DiscoveredInstall, version: Option<&str>) -> bool {
+    match (version, &found.version) {
+        (Some(want), Some(got)) => got.triple() == want,
+        (None, Some(_)) => true,
+        _ => false,
+    }
+}
+
+/// Picks one install.
+///
+/// `factorio` wins over `FACTORIO_BIN`, and either is offered as an extra
+/// candidate root rather than as the only one, which is what `run` has always
+/// done. With no version given, the first install that reported one wins.
+pub fn select(
+    home: &Path,
+    env_bin: Option<&Path>,
+    factorio: Option<&Path>,
+    version: Option<&str>,
+) -> Option<DiscoveredInstall> {
+    discover(home, factorio.or(env_bin))
+        .into_iter()
+        .find(|d| matches_version(d, version))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,5 +350,40 @@ mod tests {
         seen.sort();
         seen.dedup();
         assert_eq!(seen.len(), roots.len(), "duplicate candidate in {roots:?}");
+    }
+
+    fn discovered(version_line: Option<&str>) -> DiscoveredInstall {
+        DiscoveredInstall {
+            layout: InstallLayout {
+                root: PathBuf::from("/somewhere"),
+                binary: PathBuf::from("/somewhere/bin/x64/factorio"),
+                data_dir: PathBuf::from("/somewhere/data"),
+                doc_dir: PathBuf::from("/somewhere/doc-html"),
+            },
+            version: version_line.and_then(crate::version::parse_version_line),
+        }
+    }
+
+    #[test]
+    fn an_exact_version_is_what_matches() {
+        let found = discovered(Some("Version: 2.1.14 (build 87180, mac-arm64, steam)"));
+        assert!(matches_version(&found, Some("2.1.14")));
+        assert!(!matches_version(&found, Some("2.1.13")));
+        // major.minor is what a mod declares, not what selects an install.
+        assert!(!matches_version(&found, Some("2.1")));
+    }
+
+    #[test]
+    fn no_version_asked_for_takes_any_install_that_has_one() {
+        assert!(matches_version(
+            &discovered(Some("Version: 2.0.77 (build 84539, mac-arm64, full)")),
+            None
+        ));
+    }
+
+    #[test]
+    fn an_install_whose_binary_will_not_run_is_never_picked() {
+        assert!(!matches_version(&discovered(None), None));
+        assert!(!matches_version(&discovered(None), Some("2.1.14")));
     }
 }

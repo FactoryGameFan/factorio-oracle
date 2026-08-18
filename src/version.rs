@@ -20,6 +20,12 @@ impl VersionInfo {
     pub fn major_minor(&self) -> String {
         format!("{}.{}", self.major, self.minor)
     }
+
+    /// The `major.minor.patch` string, which is what a provenance entry
+    /// records and what `--version` selects on.
+    pub fn triple(&self) -> String {
+        format!("{}.{}.{}", self.major, self.minor, self.patch)
+    }
 }
 
 /// Parses the first line of `factorio --version`.
@@ -66,6 +72,12 @@ mod tests {
     fn major_minor_is_what_a_mod_declares() {
         let info = parse_version_line("Version: 2.1.14 (build 87038, mac-arm64, steam)").unwrap();
         assert_eq!(info.major_minor(), "2.1");
+    }
+
+    #[test]
+    fn triple_is_what_a_provenance_entry_records() {
+        let info = parse_version_line("Version: 2.1.14 (build 87180, mac-arm64, steam)").unwrap();
+        assert_eq!(info.triple(), "2.1.14");
     }
 
     #[test]
