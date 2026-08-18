@@ -82,6 +82,33 @@ pub fn fetch_tags(spawner: &dyn Spawner, clone: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// True when `dir`, or anything under it, holds at least one regular file.
+///
+/// `docs::fetch` creates the *parent* directory of the file it is about to
+/// write before it runs curl, and for a nested path like
+/// `auxiliary/noise-expressions.html` that parent is a subdirectory. So a
+/// failed fetch can leave an empty `auxiliary/` behind one level under
+/// `<cache>/docs/<version>` - a directory entry with no file in it. Measured
+/// 2026-08-17: a shallow `read_dir` on the version directory alone reported
+/// that case as cached, for a version with zero docs files anywhere on disk.
+/// Walking into subdirectories is what tells the two apart.
+fn contains_a_file(dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if contains_a_file(&path) {
+                return true;
+            }
+        } else if path.is_file() {
+            return true;
+        }
+    }
+    false
+}
+
 /// Where this version's docs are, if anywhere.
 pub fn docs_standing(
     installed_doc_dir: Option<&Path>,
@@ -94,12 +121,10 @@ pub fn docs_standing(
         }
     }
     let dir = cache.join("docs").join(version);
-    // An empty directory is what an interrupted fetch leaves, and it holds no
+    // An empty directory, or a directory holding only other empty
+    // directories, is what an interrupted fetch leaves, and it holds no
     // answers, so it does not count.
-    let has_files = std::fs::read_dir(&dir)
-        .map(|mut entries| entries.next().is_some())
-        .unwrap_or(false);
-    if has_files {
+    if contains_a_file(&dir) {
         return DocsStanding::Cached(dir);
     }
     DocsStanding::Absent
@@ -260,6 +285,26 @@ mod tests {
         // A directory made by an interrupted fetch holds no answers.
         let cache = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(cache.path().join("docs").join("2.0.45")).unwrap();
+        assert_eq!(
+            docs_standing(None, cache.path(), "2.0.45"),
+            DocsStanding::Absent
+        );
+    }
+
+    #[test]
+    fn a_nested_empty_directory_does_not_count_as_cached() {
+        // `docs::fetch` creates the *parent* of the final file before running
+        // curl, and for a nested path like `auxiliary/noise-expressions.html`
+        // that parent is a subdirectory. A failed `refs docs 2.0.45
+        // auxiliary/noise-expressions.html` - the plan's own worked example,
+        // not a hypothetical - leaves an empty `auxiliary/` behind.
+        //
+        // Measured 2026-08-17: the old check only read the top-level
+        // `<cache>/docs/<version>` directory, so it saw the `auxiliary` entry
+        // and reported `Cached`, for a version with zero docs files on disk.
+        let cache = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(cache.path().join("docs").join("2.0.45").join("auxiliary"))
+            .unwrap();
         assert_eq!(
             docs_standing(None, cache.path(), "2.0.45"),
             DocsStanding::Absent

@@ -50,19 +50,26 @@ cargo run -- refs worktree 2.0.77          # a real tree, under the cache
 cargo run -- refs docs 2.1.14 runtime-api.json --which
 ```
 
-Test counts to expect: **244 unit tests**, plus **12 integration tests** split
+Test counts to expect: **247 unit tests**, plus **13 integration tests** split
 across four files. `tests/acceptance.rs` has 3: two run offline against a
 committed fixture, and one (`the_real_install_reproduces_it_too`) is
-install-gated. `tests/provenance.rs` has 2: one always-on, and one gated on
-the `FACTORIO_ORACLE_PROVENANCE_DIR` environment variable naming another
-repo's fixture directory - not an install gate, so it skips even when
-Factorio is present. `tests/real_game.rs` has 3, all install-gated. That is
-**4 install-gated tests** in total. `tests/refs.rs` has 4, all gated on
+install-gated. `tests/provenance.rs` has 3: one always-on; one gated on the
+`FACTORIO_ORACLE_PROVENANCE_DIR` environment variable, which names another
+repo's fixture directory; and one gated on `FACTORIO_ORACLE_OLD_FACTORIO`,
+which names an install *older* than this crate's own committed fixtures.
+Neither variable is an install gate: a machine can have Factorio installed
+and still have no fixture directory to point at, and still have no *old*
+Factorio to point at either, so both tests skip even when Factorio is
+present. `tests/real_game.rs` has 3, all install-gated. That is **4
+install-gated tests** in total - `FACTORIO_ORACLE_OLD_FACTORIO`'s test is not
+one of the four, because it needs a specific old install named by hand, not
+just any install `discover` can find. `tests/refs.rs` has 4, all gated on
 finding the `~/GitHub/factorio-data` clone (or wherever `FACTORIO_DATA_DIR`
 points) - a separate gate from the install one, so a machine can have
 Factorio and no clone, or a clone and no Factorio. Without a real Factorio
-install, and now without the clone, these tests skip rather than fail, so a
-green run on a machine with neither proves less than it looks. Check which
+install, without an old one named by `FACTORIO_ORACLE_OLD_FACTORIO`, and
+without the clone, these tests skip rather than fail, so a green run on a
+machine with none of the three proves less than it looks. Check which
 happened before trusting it.
 
 ## Layout
@@ -200,10 +207,10 @@ code did. **A fake can only be wrong in the ways its author already considered.*
   `.lua`, 27 `.json`, 3 `.txt`, 1 `.md`, and no path contains a colon. That is
   what makes it safe to carry `git` output through `SpawnResult`'s `String`,
   and to split a grep line on colons.
-- **A worktree costs 0.077 seconds and 8.6 MB**, two at one tag coexist, and
-  `git worktree add` creates missing parent directories. It also writes an
-  entry into the shared clone's `.git/worktrees/`, 168 KB for three, which is
-  the one thing `refs` writes to a clone it does not own. That is why
+- **A worktree costs 0.077 seconds and 8.6 MB**, two worktrees at one tag
+  coexist, and `git worktree add` creates missing parent directories. It also
+  writes an entry into the shared clone's `.git/worktrees/`, 168 KB for three,
+  which is the one thing `refs` writes to a clone it does not own. That is why
   `refs worktree --remove` exists.
 - **The installed game ships the API docs and the published archive too.**
   Measured 2026-08-17 on 2.1.14: `doc-html/static/archive.zip` is byte-identical
@@ -221,10 +228,10 @@ code did. **A fake can only be wrong in the ways its author already considered.*
   The composition below is **2.1.14**, whose archive is 45,547,463 bytes,
   about 43 MB. Do not read the two versions as one set of numbers: a later
   version has a bigger archive, and both figures are correct for their own
-  version. 2.1.14's archive is 96 percent HTML, 267,489,280 bytes across
-  1,613 pages, about 11 KB each over the wire. **Fetching all 1,613 costs
-  about 17 MB against that 43 MB**, so there is no file count at which the
-  archive is cheaper - it also ships images and a pagefind index.
+  version. 2.1.14's archive is 96 percent HTML, 267,489,280 bytes
+  uncompressed across 1,613 pages, about 11 KB each over the wire. **Fetching
+  all 1,613 costs about 17 MB against that 43 MB**, so there is no file count
+  at which the archive is cheaper - it also ships images and a pagefind index.
   What it would buy is one request instead of many, and search without
   knowing the filename. That is why there is no zip cache and no zip
   dependency. **The limit is that you cannot search a version nobody has
@@ -233,6 +240,28 @@ code did. **A fake can only be wrong in the ways its author already considered.*
 - **`curl -f` exited 56 on a 404, not the 22 the manual suggests.** Measured
   against an unpublished version. So `refs docs` treats any non-zero exit as
   a failure and prints curl's own message rather than matching a number.
+- **`install::read_version` spawns a binary with no timeout.** It calls
+  `Command::new(binary).arg("--version").output()` directly. That is the one
+  subprocess in this crate not behind `Spawner`. `refs docs` and `refs sync`
+  both reach it through `install::select`, so a hung Factorio hangs either
+  command too.
+
+  Because of that, `refs sync --check` still launches the game binary on
+  every candidate root, even though it is documented as "Report only. Never
+  fetches, never writes." It only reads the version and exits, so this is
+  harmless today. But it is surprising, and worth knowing before anyone
+  treats `--check` as fully inert.
+
+  This is a known limit, not a fix. Changing `read_version`'s signature
+  would ripple through `discover`, `select`, and every caller - `installs
+  list`, `run`, and `provenance report` among them. That fix earns its own
+  branch. Found 2026-08-17.
+- **No test touches `src/main.rs`.** Every CLI guard - the tag and version
+  checks in each `refs` arm, the exit codes, the help text - runs untested.
+  The crate has no CLI test harness, and building one needs a dev-dependency
+  the five-crate limit forbids. That gap is why `worktree::ensure` and
+  `worktree::remove` stayed unguarded until a whole-branch review checked
+  every argument-vector boundary by hand, closed 2026-08-17.
 
 ### Writing a probe
 

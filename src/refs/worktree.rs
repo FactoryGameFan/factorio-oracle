@@ -22,9 +22,12 @@ use std::path::{Path, PathBuf};
 
 /// Where the tree for `tag` goes.
 ///
-/// One tree per tag, shared by every caller who asks for that tag. The tag is
-/// validated by `super::valid_tag` before it reaches here, which is what
-/// keeps it from escaping the cache directory.
+/// One tree per tag, shared by every caller who asks for that tag. This
+/// function does not validate the tag itself - `ensure` and `remove`, its
+/// only callers, both check `super::valid_tag` as their first line before
+/// this is reached. Closed 2026-08-17: this comment used to say the tag "is
+/// validated ... before it reaches here", which was the assumption a
+/// whole-branch review found unenforced at this function's own two callers.
 pub fn worktree_path(cache: &Path, tag: &str) -> PathBuf {
     cache.join("worktrees").join(tag)
 }
@@ -36,6 +39,13 @@ pub fn ensure(
     cache: &Path,
     tag: &str,
 ) -> anyhow::Result<PathBuf> {
+    // Checked here and not only at the CLI, because a library function must
+    // not trust its caller - the same rule `grep::search`, `grep::show` and
+    // `docs::fetch` already follow. `worktree_add_args` places the tag as a
+    // bare positional with no `--` before it, so an unchecked tag starting
+    // with `-` reaches git as an option. Found 2026-08-17 by the whole-branch
+    // review that built the complete guard table for the first time.
+    anyhow::ensure!(super::valid_tag(tag), "{tag} is not a usable tag name");
     let path = worktree_path(cache, tag);
     if path.exists() {
         if !super::is_clone(&path) {
@@ -94,6 +104,11 @@ pub fn ensure(
 /// Deleting the directory instead would leave that entry behind in a clone
 /// this tool does not own.
 pub fn remove(spawner: &dyn Spawner, clone: &Path, cache: &Path, tag: &str) -> anyhow::Result<()> {
+    // `remove` is the worse of the two unguarded entry points the review
+    // found, because it deletes: an unchecked tag holding `../` builds a
+    // path outside the cache and hands it to `git worktree remove`. Same
+    // rule and same date as `ensure`'s guard above.
+    anyhow::ensure!(super::valid_tag(tag), "{tag} is not a usable tag name");
     let path = worktree_path(cache, tag);
     if !path.exists() {
         return Ok(());
@@ -169,6 +184,29 @@ mod tests {
         assert_eq!(
             worktree_path(Path::new("/home/e/.cache/factorio-oracle"), "2.0.77"),
             PathBuf::from("/home/e/.cache/factorio-oracle/worktrees/2.0.77")
+        );
+    }
+
+    #[test]
+    fn a_tag_that_git_would_read_as_an_option_never_reaches_git() {
+        // Mirrors `grep::search`'s test of the same name. `worktree_add_args`
+        // places the tag as a bare positional with no `--` before it, so
+        // `git worktree add --detach <path> --upload-pack=<cmd>` would run a
+        // command. `ensure` is `pub`, and this module's own doc comment used
+        // to say the caller had already checked - closed 2026-08-17.
+        let cache = tempfile::tempdir().unwrap();
+        let fake = FakeGit::ok();
+        let err = ensure(
+            &fake,
+            Path::new("/clone"),
+            cache.path(),
+            "--upload-pack=touch /tmp/pwned",
+        )
+        .expect_err("a tag git would read as an option must be rejected");
+        assert!(err.to_string().contains("not a usable tag name"));
+        assert!(
+            fake.seen.borrow().is_empty(),
+            "it must be rejected before git is called at all"
         );
     }
 
@@ -270,6 +308,28 @@ mod tests {
         let fake = FakeGit::ok();
         remove(&fake, Path::new("/clone"), cache.path(), "2.0.77").expect("nothing to do");
         assert!(fake.seen.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_tag_that_could_escape_the_cache_is_rejected() {
+        // Mirrors `docs::fetch`'s test of the same shape. `worktree_path`
+        // joins the tag onto the cache directory, so this is the hazard
+        // `valid_tag` guards for `refs worktree`, one function over - and
+        // `remove` is the worse of the two because it deletes.
+        let cache = tempfile::tempdir().unwrap();
+        // The intermediate component has to exist for the OS to resolve
+        // `..` back onto the cache directory at all, which is what makes
+        // this a real escape and not just a lookup failure.
+        std::fs::create_dir_all(cache.path().join("worktrees")).unwrap();
+
+        let fake = FakeGit::ok();
+        let err = remove(&fake, Path::new("/clone"), cache.path(), "..")
+            .expect_err("a tag that is a path component must be rejected");
+        assert!(err.to_string().contains("not a usable tag name"));
+        assert!(
+            fake.seen.borrow().is_empty(),
+            "it must be rejected before anything is removed"
+        );
     }
 
     #[test]

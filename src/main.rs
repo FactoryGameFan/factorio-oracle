@@ -148,7 +148,8 @@ enum RefsAction {
         /// Select an install by path, for installs outside the usual places
         #[arg(long)]
         factorio: Option<PathBuf>,
-        /// Print where the file is instead of printing the file
+        /// Print where the file is instead of printing it. Still fetches the
+        /// file first if it is not already present.
         #[arg(long)]
         which: bool,
     },
@@ -474,13 +475,22 @@ fn main() -> anyhow::Result<()> {
             let dir = resolve_clone(clone)?;
             let cache = resolve_cache();
             if remove {
+                // `worktree::remove` returns early, doing nothing, when there
+                // is no tree for this tag - cleanup that fails on a repeat
+                // run cannot be run twice. So the message has to be checked
+                // against the same path `remove` looks at, not assumed.
+                let existed = factorio_oracle::refs::worktree::worktree_path(&cache, &tag).exists();
                 factorio_oracle::refs::worktree::remove(
                     &factorio_oracle::spawn::RealSpawner,
                     &dir,
                     &cache,
                     &tag,
                 )?;
-                println!("Removed the worktree for {tag}.");
+                if existed {
+                    println!("Removed the worktree for {tag}.");
+                } else {
+                    println!("No worktree for {tag} to remove.");
+                }
             } else {
                 let path = factorio_oracle::refs::worktree::ensure(
                     &factorio_oracle::spawn::RealSpawner,
@@ -570,9 +580,12 @@ fn main() -> anyhow::Result<()> {
         } => {
             use factorio_oracle::refs::sync;
 
-            if !factorio_oracle::refs::valid_tag(&version) {
-                anyhow::bail!("{version} is not a usable tag name");
-            }
+            // Matches the `docs` arm's wording: the positional is called
+            // `version` here, not `tag`, so the error should say so too.
+            anyhow::ensure!(
+                factorio_oracle::refs::valid_tag(&version),
+                "{version} is not a usable version"
+            );
 
             let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
             let env_dir = std::env::var_os("FACTORIO_DATA_DIR").map(PathBuf::from);

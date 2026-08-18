@@ -18,10 +18,11 @@
 //! `runtime-api.json` came back at 1,597,033 bytes with or without
 //! `Accept-Encoding: gzip`, while `defines.html` went 506,148 -> 32,038 and
 //! `noise-expressions.html` 53,222 -> 11,966. The archive is 96 percent HTML,
-//! 267,489,280 bytes across 1,613 pages. Fetching **every one of those pages
-//! one at a time costs about 17 MB, against 43 MB for the archive**, which
-//! also carries images and a search index nobody asked for. So the cache here
-//! fills one file at a time and ends up as a sparse `doc-html`.
+//! 267,489,280 bytes uncompressed across 1,613 pages. Fetching **every one of
+//! those pages one at a time costs about 17 MB, against 43 MB for the
+//! archive**, which also carries images and a search index nobody asked for.
+//! So the cache here fills one file at a time and ends up as a sparse
+//! `doc-html`.
 //!
 //! **The limit, stated rather than hidden:** you cannot search a version
 //! nobody has installed, because you cannot grep files you never fetched.
