@@ -2,6 +2,7 @@
 
 use crate::version::{parse_version_line, VersionInfo};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 /// The three paths every mode needs from an install.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,13 +132,105 @@ pub fn candidate_roots(home: &Path, env_bin: Option<&Path>) -> Vec<PathBuf> {
     roots
 }
 
-/// Reads a version by running the binary. Returns `None` if it will not run.
+/// How long a version probe gets before its process is killed.
+///
+/// Measured 2026-08-18 on this Mac, 15 runs each: `factorio --version` took a
+/// median of 47.6 ms on the 2.1.14 Steam install (min 44.9, max 54.9) and 43.9
+/// ms on the 2.0.77 standalone (min 41.7, max 44.6). Each printed 116 bytes or
+/// fewer, all of it on stdout and none on stderr. Ten seconds is about 200
+/// times the median, which leaves room for a cold page cache, a slow disk, a
+/// network share or a loaded machine, and still ends a hang in seconds instead
+/// of never. A binary that has said nothing in ten seconds is not going to.
+const VERSION_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How often a version probe checks whether its process is done.
+///
+/// `spawn.rs` polls every 50 ms, which is right for a probe run measured in
+/// seconds. This one is measured in tens of milliseconds and `discover` pays it
+/// once per candidate root, so 50 ms would add most of a second across a
+/// machine with several installs. 5 ms costs about nine wakeups on a healthy
+/// install and is invisible next to the 45 ms the game spends starting up.
+const VERSION_POLL: Duration = Duration::from_millis(5);
+
+/// Reads a version by running the binary. Returns `None` if it will not run,
+/// which since 2026-08-18 includes "did not answer inside [`VERSION_TIMEOUT`]".
+///
+/// The signature is deliberately unchanged. `None` already meant "this binary
+/// will not tell us its version", so a timeout is one more way to reach an
+/// answer every caller already handles, and `discover`, `select` and their
+/// callers needed no edit.
 pub fn read_version(binary: &Path) -> Option<VersionInfo> {
-    let output = std::process::Command::new(binary)
+    read_version_within(binary, VERSION_TIMEOUT)
+}
+
+/// The body of [`read_version`], with the deadline passed in so tests can use
+/// one short enough to wait for.
+fn read_version_within(binary: &Path, timeout: Duration) -> Option<VersionInfo> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new(binary)
         .arg("--version")
-        .output()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        // stderr is thrown away rather than piped. Factorio writes nothing to
+        // it - measured three ways on 2.1.14, again on Windows, and again here
+        // on 2026-08-18 with 15 runs on each of two installs, zero bytes every
+        // time - and only stdout is parsed. A piped stream nobody reads is a
+        // pipe that can fill and wedge the child, so the stream this function
+        // does not read does not exist.
+        .stderr(Stdio::null())
+        .spawn()
         .ok()?;
-    parse_version_line(&String::from_utf8_lossy(&output.stdout))
+
+    // A thread drains stdout while this one watches the clock. Two ways to
+    // build that, and this is the one where the timeout can still bite: the
+    // `Child` stays here, so `kill` below is reachable. Handing the whole child
+    // to a thread and waiting on a channel reads more simply, but leaves
+    // nothing able to stop the process, and abandoning a hung Factorio is worse
+    // than the hang this fixes. Polling `try_wait` with no reader is the other
+    // near miss: it never empties the pipe, so a child that filled it would
+    // block on its own write and be recorded as a timeout while healthy.
+    let Some(mut pipe) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    };
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buffer = Vec::new();
+        let _ = pipe.read_to_end(&mut buffer);
+        let _ = sender.send(buffer);
+    });
+
+    let deadline = Instant::now() + timeout;
+    let exited = loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break true,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(VERSION_POLL),
+            // Out of time, or the wait itself failed. Either way, stop asking.
+            _ => break false,
+        }
+    };
+
+    if !exited {
+        // Killed and reaped, in that order and both of them. `kill` alone
+        // leaves a zombie, because Rust's `Child` does not reap on drop.
+        let _ = child.kill();
+        let _ = child.wait();
+        // The reader thread is left to end on its own when the pipe closes.
+        // Joining it here would hand back the very hang this function exists to
+        // stop, in the case where the child passed the write end to something
+        // that outlived it. Partial output is not parsed either: a binary that
+        // had to be killed has not answered the question.
+        return None;
+    }
+
+    // The child is gone, so the pipe is closed and this returns at once. It is
+    // still bounded, because "the child is gone" is not the same as "nothing
+    // holds the write end".
+    let stdout = receiver.recv_timeout(timeout).ok()?;
+    parse_version_line(&String::from_utf8_lossy(&stdout))
 }
 
 /// Finds every install on this machine.
@@ -389,5 +482,197 @@ mod tests {
     fn an_install_whose_binary_will_not_run_is_never_picked() {
         assert!(!matches_version(&discovered(None), None));
         assert!(!matches_version(&discovered(None), Some("2.1.14")));
+    }
+
+    /// Writes an executable `/bin/sh` script and hands back its path.
+    ///
+    /// Unix only, and the reason is worth stating rather than discovering.
+    /// Rust's `Command` reaches `CreateProcess` on Windows, which runs neither
+    /// a shebang script nor a `.cmd` file, so a throwaway fake binary there
+    /// needs a second cargo target or a sixth dependency, and the crate holds
+    /// at five. CI is ubuntu-latest, so every test below runs on every push; on
+    /// Windows they are absent, not silently passing.
+    #[cfg(unix)]
+    fn fake_binary(dir: &Path, body: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("factorio");
+        fs::write(&path, format!("#!/bin/sh\n{body}")).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reads_the_version_a_healthy_binary_prints() {
+        // All three lines, copied from what `factorio --version` really prints:
+        // the parser has to take the first and ignore the rest.
+        let dir = tempdir().unwrap();
+        let binary = fake_binary(
+            dir.path(),
+            "echo 'Version: 2.1.14 (build 87180, mac-arm64, steam)'\n\
+             echo 'Version: 64'\n\
+             echo 'Map input version: 1.0.0-0'\n",
+        );
+
+        let version = read_version_within(&binary, Duration::from_secs(10)).expect("should read");
+        assert_eq!(version.triple(), "2.1.14");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_slow_binary_that_does_answer_is_still_read_in_full() {
+        // The deadline must not truncate a healthy run. This one says nothing
+        // for far longer than a poll interval, then prints, so an
+        // implementation that read the pipe once and moved on would miss it.
+        let dir = tempdir().unwrap();
+        let binary = fake_binary(
+            dir.path(),
+            "sleep 0.3\necho 'Version: 2.0.77 (build 84539, mac-arm64, full)'\n",
+        );
+
+        let version = read_version_within(&binary, Duration::from_secs(10)).expect("should read");
+        assert_eq!(version.triple(), "2.0.77");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_binary_that_never_answers_gives_up_instead_of_hanging() {
+        // `exec` matters: it replaces the shell, so the process this crate
+        // spawned is the one that sleeps, and there is no orphan behind it.
+        let dir = tempdir().unwrap();
+        let binary = fake_binary(dir.path(), "exec sleep 5\n");
+
+        // The call runs on a worker thread on purpose. The implementation this
+        // replaced never came back at all, and a test that hangs tells CI
+        // nothing; this way a lost deadline fails in ten seconds with a reason.
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let started = Instant::now();
+            let version = read_version_within(&binary, Duration::from_millis(200));
+            let _ = sender.send((version, started.elapsed()));
+        });
+        let (version, elapsed) = receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("read_version_within never came back, so the deadline is gone");
+
+        assert!(
+            version.is_none(),
+            "a binary that never spoke has no version"
+        );
+        assert!(
+            elapsed >= Duration::from_millis(200),
+            "gave up before the deadline, after {elapsed:?}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(3),
+            "took {elapsed:?}, so it waited on the binary rather than the clock"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_grandchild_holding_the_pipe_does_not_lose_the_output() {
+        // The second wait, which nothing else here reaches. `try_wait` returns
+        // as soon as the shell exits, but the pipe stays open because the
+        // background `sleep` inherited the write end, so `read_to_end` in the
+        // reader thread does not finish until that grandchild does. The two
+        // waits are additive, which is why the worst case is two deadlines and
+        // not one. Measured 2026-08-18: with a 3 second grandchild the call
+        // returned the right version after 3.18 seconds.
+        //
+        // Waiting is the intended behaviour. Returning early would drop output
+        // the child had already written, which is the failure the reader thread
+        // exists to prevent. This pins that the output survives.
+        let dir = tempdir().unwrap();
+        let binary = fake_binary(
+            dir.path(),
+            "sleep 1 &\necho 'Version: 2.1.14 (build 87180, mac-arm64, steam)'\nexit 0\n",
+        );
+
+        let started = Instant::now();
+        let version = read_version_within(&binary, Duration::from_secs(10));
+        let elapsed = started.elapsed();
+
+        assert_eq!(
+            version.map(|v| v.triple()),
+            Some("2.1.14".to_string()),
+            "output written before the parent exited must still be read"
+        );
+        assert!(
+            elapsed >= Duration::from_secs(1),
+            "returned in {elapsed:?}, so it never waited on the held pipe"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_wait_for_a_held_pipe_is_bounded_by_the_deadline() {
+        // The other half, and it needs its own test because the one above
+        // cannot fail on this point: a grandchild shorter than the deadline
+        // returns early whether the second wait is bounded or not. Here the
+        // grandchild outlives the deadline, so an unbounded second wait - a
+        // plain `recv()` rather than `recv_timeout` - takes six seconds instead
+        // of two, and this fails.
+        let dir = tempdir().unwrap();
+        let binary = fake_binary(
+            dir.path(),
+            "sleep 6 &\necho 'Version: 2.1.14 (build 87180, mac-arm64, steam)'\nexit 0\n",
+        );
+
+        let started = Instant::now();
+        let version = read_version_within(&binary, Duration::from_secs(2));
+        let elapsed = started.elapsed();
+
+        assert!(
+            version.is_none(),
+            "the read timed out, so there is no answer to report"
+        );
+        assert!(
+            elapsed >= Duration::from_secs(2),
+            "gave up in {elapsed:?}, before its own deadline"
+        );
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "took {elapsed:?}, so it waited on the grandchild rather than the clock"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_binary_it_gave_up_on_is_killed_and_reaped() {
+        // Leaking a hung Factorio is worse than the bug the deadline fixes, so
+        // this checks the process is gone rather than merely ignored.
+        let dir = tempdir().unwrap();
+        let pidfile = dir.path().join("pid");
+        let binary = fake_binary(
+            dir.path(),
+            &format!("echo $$ > \"{}\"\nexec sleep 5\n", pidfile.display()),
+        );
+
+        // Two seconds, not the 200 ms the test above uses, and the reason is
+        // measured rather than cautious. A script file written moments ago is
+        // slow on its first exec - macOS scans a new executable before running
+        // it - and while the rest of this suite is spawning too, the first line
+        // took 345 to 438 ms across three runs on 2026-08-18. A 200 ms deadline
+        // killed the shell before it ever wrote its pid, which is a test that
+        // fails for a reason having nothing to do with the code under it.
+        assert!(read_version_within(&binary, Duration::from_secs(2)).is_none());
+
+        let pid = fs::read_to_string(&pidfile)
+            .expect("the fake binary never reached its first line, so this proves nothing")
+            .trim()
+            .to_string();
+        // `kill -0` asks whether a pid still exists. It succeeds on a live
+        // process and on a zombie, which is what lets this one assertion catch
+        // a missing kill and a missing wait as separate failures.
+        let still_there = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(format!("kill -0 {pid} 2>/dev/null"))
+            .status()
+            .unwrap();
+        assert!(
+            !still_there.success(),
+            "process {pid} outlived the timeout that was supposed to kill it"
+        );
     }
 }
