@@ -37,6 +37,16 @@ re-measured here.
   **Measured 2026-08-16 on 2.1.14.** `script.active_mods` is populated there too.
   That is where metadata belongs: no collision surface, and it costs no ticks.
 
+- **The dump must be written as `oracle-dump.json`.** **Measured 2026-08-18**,
+  on the first probe a consumer wrote against this tool. The name is this tool's
+  contract rather than the game's: `helpers.write_file` accepts any name, the
+  file lands in `script-output` next to where the tool looks, and `create` keys
+  its success off that one filename. A probe that wrote
+  `basis-gradient-probe.json` got `ok: false` with all 270 KB of its data sitting
+  in the report's own `files` array. The failure message now says so when the
+  sentinel was seen, because a mod that raised one cannot have been skipped over
+  a version mismatch.
+
 - **Toplevel is for metadata, not for sampling.** `game.surfaces[1]` does not
   exist at control-stage toplevel, so anything calling `calculate_tile_properties`
   or `get_tile` still needs `on_init`. The two rules compose rather than compete.
@@ -237,6 +247,15 @@ re-measured here.
   rather than 2.1.12, and four entities move footprint between the two:
   `tree-plant` and the three demolisher corpses. None was among the 155 that
   repo knows, so nothing broke - but nothing would have told them either. (#142)
+
+- **Some tables are a constant of the engine rather than of a version, and which
+  one it is has to be measured.** **Measured 2026-08-18** on 2.0.77 (build 84539)
+  and 2.1.14 (build 87180): `basis_noise`'s 256-slot gradient table recovers
+  byte-identically from both, across 4,352 samples per axis, and the recovered
+  table also scores 512 of 512 exact against a FactorioMapWebUI fixture first
+  captured on 2.1.11 and re-verified bit-for-bit on 2.1.12. Four versions, one
+  table. The second run cost one command, and a disagreement would have been a
+  finding larger than the probe that found it. (FactorioMapWebUI #234)
 
 - **Run a probe against two versions when you can.** The older one reproducing a
   known-good answer is what earns trust in the new one.

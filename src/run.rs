@@ -27,12 +27,12 @@ pub struct RunRequest {
 }
 
 /// What a probe raises to say it finished on purpose rather than crashed.
-const SENTINEL: &str = "DUMPED-OK";
+pub(crate) const SENTINEL: &str = "DUMPED-OK";
 
 /// The dump file a `--dump-data` run writes, named by the game.
 const DUMP_DATA_FILE: &str = "data-raw-dump.json";
 /// The default dump name for a probe mod.
-const PROBE_DUMP_FILE: &str = "oracle-dump.json";
+pub(crate) const PROBE_DUMP_FILE: &str = "oracle-dump.json";
 /// The preview image name.
 const PREVIEW_FILE: &str = "preview.png";
 
@@ -661,7 +661,10 @@ mod tests {
         let result = run_probe(&request, &NoDump).unwrap();
 
         assert_eq!(result["ok"], false);
-        assert!(result["error"].as_str().unwrap().contains("no dump"));
+        // This spawner raises no sentinel, so the report names the silent skip.
+        let why = result["error"].as_str().unwrap();
+        assert!(why.contains(PROBE_DUMP_FILE), "{why}");
+        assert!(why.contains("factorio_version"), "{why}");
         assert!(result["stderrTail"]
             .as_str()
             .unwrap()
