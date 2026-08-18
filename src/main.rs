@@ -506,8 +506,11 @@ fn main() -> anyhow::Result<()> {
             //
             // `select` is used rather than a bare `discover`, so an install
             // outside the candidate roots can be named. That is not a corner
-            // case: the 2.0.77 build on this machine lives in ~/Downloads,
-            // which discovery does not search and should not. `select` also
+            // case: the 2.0.77 build on this machine sits in this repo at
+            // installs/factorio-2.0.77.app, which discovery does not search
+            // and should not - it is gitignored and outside every candidate
+            // root on purpose, so no install-gated test changes which install
+            // it picks. `select` also
             // requires an exact triple match, so naming a 2.1.14 install
             // while asking for 2.0.77 docs cannot quietly answer with the
             // wrong version - it falls through to the cache instead.

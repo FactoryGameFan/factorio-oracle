@@ -62,15 +62,27 @@ pub fn url(version: &str, rel: &str) -> String {
 /// has to be safe for both. No leading slash, no `.` or `..` component, no
 /// empty component, and no leading dash.
 pub fn safe_relative(rel: &str) -> bool {
-    // The backslash check is not redundant with the split below. Windows
-    // treats `\` as a path separator, so `..\..\etc` is a single component
-    // to a `/`-split and a traversal to `Path::join` on Windows. No published
-    // docs path holds a backslash, so rejecting it outright costs nothing and
-    // keeps this predicate meaning the same thing on every platform.
+    // The backslash and colon checks are not redundant with the split below.
+    // Both are Windows path syntax that a `/`-split cannot see.
+    //
+    // Backslash: Windows treats it as a separator, so `..\..\etc` is one
+    // component to the split and a traversal to `Path::join` there.
+    //
+    // Colon: a bare drive-letter component like `C:` is a prefix without a
+    // root, and `PathBuf::push` documents that such a path **replaces** the
+    // buffer entirely rather than joining onto it. So `C:/whatever` would
+    // discard the cache directory and resolve against the current directory
+    // of that drive. Inferred from std's documented behaviour rather than
+    // measured, because the only Windows machine here is powered off.
+    //
+    // Both are free to reject. Measured 2026-08-17 across all 3,370 files in
+    // the 2.1.14 docs archive and the installed tree: not one path contains a
+    // backslash or a colon.
     !rel.is_empty()
         && !rel.starts_with('/')
         && !rel.starts_with('-')
         && !rel.contains('\\')
+        && !rel.contains(':')
         && !rel
             .split('/')
             .any(|c| c.is_empty() || c == "." || c == "..")
@@ -236,6 +248,22 @@ mod tests {
         // guards a path join, and this was the gap.
         assert!(!safe_relative("..\\..\\etc"));
         assert!(!safe_relative("auxiliary\\noise-expressions.html"));
+    }
+
+    #[test]
+    fn a_drive_letter_is_rejected_because_it_replaces_a_path_rather_than_joining() {
+        // `PathBuf::push` documents that a path with a prefix and no root
+        // replaces the buffer outright, so a `C:` component would discard the
+        // cache directory entirely on Windows.
+        //
+        // Found by the Task 5 review on 2026-08-17: `valid_tag` guards the
+        // version with a character allowlist that excludes `:` structurally,
+        // while this function used a blocklist and never checked for one. The
+        // same "guarded one argument over" gap, for the sixth time in this
+        // plan.
+        assert!(!safe_relative("C:/whatever"));
+        assert!(!safe_relative("C:"));
+        assert!(!safe_relative("classes/Lua:Entity.html"));
     }
 
     #[test]
