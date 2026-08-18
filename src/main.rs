@@ -139,6 +139,19 @@ enum RefsAction {
         #[arg(long)]
         remove: bool,
     },
+    /// Print a Lua API docs file. Uses an installed game before the network.
+    Docs {
+        /// The version, for example 2.0.45
+        version: String,
+        /// The path inside the docs, for example runtime-api.json
+        path: String,
+        /// Select an install by path, for installs outside the usual places
+        #[arg(long)]
+        factorio: Option<PathBuf>,
+        /// Print where the file is instead of printing the file
+        #[arg(long)]
+        which: bool,
+    },
 }
 
 /// Resolves the factorio-data clone and checks it is one.
@@ -460,6 +473,68 @@ fn main() -> anyhow::Result<()> {
                 // The path on its own line, so a caller can capture it:
                 //   cd "$(factorio-oracle refs worktree 2.0.77)"
                 println!("{}", path.display());
+            }
+        }
+        Command::Refs {
+            action:
+                RefsAction::Docs {
+                    version,
+                    path,
+                    factorio,
+                    which,
+                },
+        } => {
+            use factorio_oracle::refs::docs::{self, DocsSource};
+
+            // The version is joined onto the cache directory by `cache_path`
+            // and onto the URL by `url`, so it needs the same guard the tag
+            // arms use. The `sync` arm checks it; this one did not.
+            anyhow::ensure!(
+                factorio_oracle::refs::valid_tag(&version),
+                "{version} is not a usable version"
+            );
+            anyhow::ensure!(
+                docs::safe_relative(&path),
+                "{path} is not a usable docs path"
+            );
+
+            let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
+            let env_bin = std::env::var_os("FACTORIO_BIN").map(PathBuf::from);
+            // An installed game of that version answers with no network at
+            // all. Measured: its doc-html is byte-identical to the published
+            // archive's contents.
+            //
+            // `select` is used rather than a bare `discover`, so an install
+            // outside the candidate roots can be named. That is not a corner
+            // case: the 2.0.77 build on this machine lives in ~/Downloads,
+            // which discovery does not search and should not. `select` also
+            // requires an exact triple match, so naming a 2.1.14 install
+            // while asking for 2.0.77 docs cannot quietly answer with the
+            // wrong version - it falls through to the cache instead.
+            let installed = install::select(
+                &home,
+                factorio.as_deref(),
+                env_bin.as_deref(),
+                Some(&version),
+            )
+            .map(|d| d.layout.doc_dir);
+            let cache = resolve_cache();
+
+            let resolved = match docs::locate(installed.as_deref(), &cache, &version, &path) {
+                DocsSource::Install(p) => p,
+                DocsSource::Cache(p) => p,
+                DocsSource::Fetch { .. } => docs::fetch(
+                    &factorio_oracle::spawn::RealSpawner,
+                    &cache,
+                    &version,
+                    &path,
+                )?,
+            };
+
+            if which {
+                println!("{}", resolved.display());
+            } else {
+                print!("{}", std::fs::read_to_string(&resolved)?);
             }
         }
     }
