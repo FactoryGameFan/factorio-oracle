@@ -12,6 +12,7 @@
 //! is a coincidence, and it is the failure this module exists to remove.
 
 pub mod git;
+pub mod grep;
 
 use std::path::{Path, PathBuf};
 

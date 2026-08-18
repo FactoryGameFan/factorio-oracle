@@ -62,6 +62,11 @@ enum Command {
         #[command(subcommand)]
         action: ProvenanceAction,
     },
+    /// Read Factorio's shipped Lua and API docs at a version
+    Refs {
+        #[command(subcommand)]
+        action: RefsAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -90,6 +95,56 @@ enum ProvenanceAction {
         #[arg(long)]
         factorio: Option<PathBuf>,
     },
+}
+
+#[derive(Subcommand)]
+enum RefsAction {
+    /// Print one file from factorio-data at a tag. Moves no HEAD.
+    Show {
+        /// The tag, for example 2.0.73
+        tag: String,
+        /// The path inside the repo, for example base/info.json
+        path: String,
+        /// The factorio-data clone. Defaults to FACTORIO_DATA_DIR, then
+        /// ~/GitHub/factorio-data.
+        #[arg(long)]
+        clone: Option<PathBuf>,
+    },
+    /// Search factorio-data at one tag or several. Moves no HEAD.
+    Grep {
+        /// The pattern, passed to git grep
+        pattern: String,
+        /// A tag to search. Repeat it to compare versions.
+        #[arg(long = "tag", required = true)]
+        tags: Vec<String>,
+        /// Limit the search to these paths
+        #[arg(long = "path")]
+        paths: Vec<String>,
+        /// The factorio-data clone
+        #[arg(long)]
+        clone: Option<PathBuf>,
+        /// Emit JSON instead of grep-style lines
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// Resolves the factorio-data clone and checks it is one.
+///
+/// `FACTORIO_DATA_DIR` is FactorioMapWebUI's own override name, reused so
+/// both tools read one setting.
+fn resolve_clone(explicit: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
+    let env_dir = std::env::var_os("FACTORIO_DATA_DIR").map(PathBuf::from);
+    let dir = factorio_oracle::refs::data_clone(&home, explicit.as_deref().or(env_dir.as_deref()));
+    if !factorio_oracle::refs::is_clone(&dir) {
+        anyhow::bail!(
+            "no factorio-data clone at {}. Clone https://github.com/wube/factorio-data there, \
+             or set FACTORIO_DATA_DIR.",
+            dir.display()
+        );
+    }
+    Ok(dir)
 }
 
 fn main() -> anyhow::Result<()> {
@@ -303,6 +358,61 @@ fn main() -> anyhow::Result<()> {
                     &factorio_oracle::provenance::report::compare(&manifest, &found.triple())
                 )
             );
+        }
+        Command::Refs {
+            action: RefsAction::Show { tag, path, clone },
+        } => {
+            if !factorio_oracle::refs::valid_tag(&tag) {
+                anyhow::bail!("{tag} is not a usable tag name");
+            }
+            let dir = resolve_clone(clone)?;
+            print!(
+                "{}",
+                factorio_oracle::refs::grep::show(
+                    &factorio_oracle::spawn::RealSpawner,
+                    &dir,
+                    &tag,
+                    &path
+                )?
+            );
+        }
+        Command::Refs {
+            action:
+                RefsAction::Grep {
+                    pattern,
+                    tags,
+                    paths,
+                    clone,
+                    json,
+                },
+        } => {
+            for tag in &tags {
+                if !factorio_oracle::refs::valid_tag(tag) {
+                    anyhow::bail!("{tag} is not a usable tag name");
+                }
+            }
+            let dir = resolve_clone(clone)?;
+            let report = factorio_oracle::refs::grep::search(
+                &factorio_oracle::spawn::RealSpawner,
+                &dir,
+                &pattern,
+                &tags,
+                &paths,
+            )?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&factorio_oracle::refs::grep::to_json(&report))?
+                );
+            } else {
+                print!("{}", factorio_oracle::refs::grep::render(&report));
+            }
+            // grep's convention, kept: nothing found is exit 1. A verdict of
+            // `differs` is NOT a failure - it is the finding, and whether it
+            // matters is a human's call, the same split provenance uses.
+            if report.empty() {
+                std::process::exit(1);
+            }
         }
     }
     Ok(())
