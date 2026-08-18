@@ -28,6 +28,15 @@ pub enum Verdict {
     Identical,
     /// At least one tag matched something the others did not.
     Differs,
+    /// More than one tag was asked about and none of them matched anything.
+    ///
+    /// Reported apart from `Identical` on purpose. Two absences agreeing is
+    /// not evidence that a value is unchanged, it is evidence the pattern is
+    /// absent - which is what `docs/method.md` means by refusing to treat
+    /// last man standing as a measurement. Without this variant a mistyped
+    /// pattern comes back as `verdict: "identical"`, and a consumer keying
+    /// on that string reads a typo as a positive finding.
+    NothingMatched,
 }
 
 impl Verdict {
@@ -36,6 +45,7 @@ impl Verdict {
             Verdict::Single => "single",
             Verdict::Identical => "identical",
             Verdict::Differs => "differs",
+            Verdict::NothingMatched => "nothing-matched",
         }
     }
 }
@@ -86,6 +96,9 @@ pub fn verdict(tags: &[TagResult]) -> Verdict {
     if tags.len() < 2 {
         return Verdict::Single;
     }
+    if tags.iter().all(|t| t.hits.is_empty()) {
+        return Verdict::NothingMatched;
+    }
     let first = fingerprint(&tags[0]);
     if tags[1..].iter().all(|t| fingerprint(t) == first) {
         Verdict::Identical
@@ -105,6 +118,14 @@ pub fn search(
     tags: &[String],
     pathspec: &[String],
 ) -> anyhow::Result<GrepReport> {
+    // Checked here and not only at the CLI, because a library function must
+    // not trust its caller and both of these are `pub`. `grep_args` places
+    // the tag as a bare positional with no `--` before it, so a tag starting
+    // with `-` reaches git as an option, and `git grep
+    // --open-files-in-pager=<cmd>` runs a command.
+    for tag in tags {
+        anyhow::ensure!(super::valid_tag(tag), "{tag} is not a usable tag name");
+    }
     let mut results = Vec::new();
     for tag in tags {
         let args = git::grep_args(clone, tag, pattern, pathspec);
@@ -136,6 +157,7 @@ pub fn search(
 
 /// Reads one file at one tag. `HEAD` does not move.
 pub fn show(spawner: &dyn Spawner, clone: &Path, tag: &str, path: &str) -> anyhow::Result<String> {
+    anyhow::ensure!(super::valid_tag(tag), "{tag} is not a usable tag name");
     let args = git::show_args(clone, tag, path);
     let out = spawner.run(Path::new("git"), &args, Some(git::GIT_TIMEOUT))?;
     if out.exit_code != Some(0) {
@@ -170,9 +192,17 @@ pub fn render(report: &GrepReport) -> String {
             _ => names.join(""),
         };
         out.push('\n');
+        // Every variant is named rather than caught by `_`. A fourth verdict
+        // added later would otherwise compile silently and print "identical
+        // across", which is the worst wrong answer this tool can give.
         match report.verdict {
             Verdict::Differs => out.push_str(&format!("differs between {joined}\n")),
-            _ => out.push_str(&format!("identical across {joined}\n")),
+            Verdict::NothingMatched => {
+                out.push_str(&format!("nothing matched at any of {joined}\n"))
+            }
+            Verdict::Identical | Verdict::Single => {
+                out.push_str(&format!("identical across {joined}\n"))
+            }
         }
     }
     out
@@ -398,6 +428,75 @@ mod tests {
     }
 
     #[test]
+    fn two_tags_that_both_matched_nothing_are_not_identical() {
+        // Absence at both tags is not agreement. `docs/method.md` calls this
+        // out directly: last man standing is not a measurement. The likeliest
+        // real cause is a mistyped pattern, and reporting that as "identical"
+        // hands back a positive finding for a question nobody asked.
+        let tags = vec![
+            TagResult {
+                tag: "2.0.73".into(),
+                hits: vec![],
+            },
+            TagResult {
+                tag: "2.1.12".into(),
+                hits: vec![],
+            },
+        ];
+        assert_eq!(verdict(&tags), Verdict::NothingMatched);
+    }
+
+    #[test]
+    fn nothing_matched_renders_as_absence_rather_than_agreement() {
+        let report = GrepReport {
+            pattern: "zzz-not-a-real-token-zzz".into(),
+            tags: vec![
+                TagResult {
+                    tag: "2.0.73".into(),
+                    hits: vec![],
+                },
+                TagResult {
+                    tag: "2.1.12".into(),
+                    hits: vec![],
+                },
+            ],
+            verdict: Verdict::NothingMatched,
+        };
+        let text = render(&report);
+        assert!(text.contains("nothing matched at any of 2.0.73 and 2.1.12"));
+        assert!(!text.contains("identical"));
+        // And the machine-readable form, which is the one that can mislead
+        // silently: a consumer keying on the verdict string must not see
+        // "identical" here.
+        assert_eq!(to_json(&report)["verdict"], "nothing-matched");
+    }
+
+    #[test]
+    fn a_tag_that_git_would_read_as_an_option_never_reaches_git() {
+        // `grep_args` puts the tag as a bare positional with no `--` before
+        // it, so `git grep --open-files-in-pager=<cmd>` would run a command.
+        // The CLI checks this, but `search` is `pub` and later tasks call
+        // into this module, so the guard belongs at this boundary too.
+        let fake = FakeGit {
+            by_tag: vec![],
+            seen: RefCell::new(vec![]),
+        };
+        let err = search(
+            &fake,
+            Path::new("/clone"),
+            "support_range",
+            &["--open-files-in-pager=touch /tmp/pwned".to_string()],
+            &[],
+        )
+        .expect_err("a tag git would read as an option must be rejected");
+        assert!(err.to_string().contains("not a usable tag name"));
+        assert!(
+            fake.seen.borrow().is_empty(),
+            "it must be rejected before git is called at all"
+        );
+    }
+
+    #[test]
     fn one_tag_renders_without_a_tag_column() {
         // With one tag the output is git grep's own shape with the `<tag>:`
         // prefix removed, which is what the design asked for. It pipes into
@@ -410,12 +509,18 @@ mod tests {
             }],
             verdict: Verdict::Single,
         };
+        // Asserted as the whole string, not with `contains`. Review on
+        // 2026-08-17 showed the `contains` form could not fail: adding a tag
+        // column would leave every substring it checked intact, and the
+        // `2.1.14:` check was dead too, because `parse_hit` strips that
+        // prefix before a `Hit` exists. So the test could not catch the one
+        // regression its name promises.
         let text = render(&report);
-        assert!(text.contains(
-            "elevated-rails/prototypes/entity/elevated-rails.lua:309:    support_range = 11,"
-        ));
-        assert!(!text.contains("2.1.14:"));
-        assert!(!text.contains("identical"));
+        assert_eq!(
+            text,
+            "elevated-rails/prototypes/entity/elevated-rails.lua:111:    support_range = 9,\n\
+             elevated-rails/prototypes/entity/elevated-rails.lua:309:    support_range = 11,\n"
+        );
     }
 
     #[test]
