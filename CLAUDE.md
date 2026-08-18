@@ -132,11 +132,13 @@ code did. **A fake can only be wrong in the ways its author already considered.*
   times. The design sketched all eight. A checker requiring the sketch would
   reject the only real manifest there is, so the other six are optional and
   carried through untouched.
-- **`evidence` is free text, and enforcing a grade would reject 45 of 100.**
+- **`evidence` is free text, and enforcing a grade would reject 48 of 100.**
   First word across the same 100 entries: `stated` 48, `captured` 34,
   `RE-CAPTURED` 8, `inferred` 4, `re-captured` 3, `UNDOCUMENTED` 1, and twice
-  it is just `the`. The grade that is real is `factorioVersion: "unknown"`,
-  which is a field, and that is what the ratchet counts.
+  it is just `the`. The design's enum was `stated | inferred | unknown`, which
+  accepts 52 of the 100 first words and rejects the other 48. The grade that
+  is real is `factorioVersion: "unknown"`, which is a field, and that is what
+  the ratchet counts.
 - **An extension allowlist is how ground truth goes unrecorded.** MapWebUI's
   provenance test globs `.json` and `.png`. Its fixture directory also holds 10
   `.txt` map exchange strings, and **8 of the 10 are read as ground truth** by
