@@ -240,22 +240,61 @@ code did. **A fake can only be wrong in the ways its author already considered.*
 - **`curl -f` exited 56 on a 404, not the 22 the manual suggests.** Measured
   against an unpublished version. So `refs docs` treats any non-zero exit as
   a failure and prints curl's own message rather than matching a number.
-- **`install::read_version` spawns a binary with no timeout.** It calls
-  `Command::new(binary).arg("--version").output()` directly. That is the one
-  subprocess in this crate not behind `Spawner`. `refs docs` and `refs sync`
-  both reach it through `install::select`, so a hung Factorio hangs either
-  command too.
+- **`install::read_version` spawns a binary outside `Spawner`, now with a
+  deadline.** It is still the one subprocess in this crate not behind the
+  trait. Until 2026-08-18 it called
+  `Command::new(binary).arg("--version").output()` with no deadline at all, so
+  a hung Factorio hung every command that picks an install: `installs list`,
+  `run`, `provenance report`, `refs docs` and `refs sync`. Found 2026-08-17,
+  fixed 2026-08-18.
 
-  Because of that, `refs sync --check` still launches the game binary on
-  every candidate root, even though it is documented as "Report only. Never
-  fetches, never writes." It only reads the version and exits, so this is
-  harmless today. But it is surprising, and worth knowing before anyone
-  treats `--check` as fully inert.
+  The fix is a 10 second deadline, and **no signature change**. `None` already
+  meant "this binary will not tell us its version", so a timeout is one more
+  way to reach an answer every caller already handled, and `discover`, `select`
+  and the callers below them needed no edit. The process is killed and reaped,
+  not abandoned: `kill` alone leaves a zombie, because Rust's `Child` does not
+  reap on drop. A thread drains stdout while the main thread watches the clock,
+  which is what keeps the `Child` in reach of `kill` and keeps a full pipe from
+  reading as a hang.
 
-  This is a known limit, not a fix. Changing `read_version`'s signature
-  would ripple through `discover`, `select`, and every caller - `installs
-  list`, `run`, and `provenance report` among them. That fix earns its own
-  branch. Found 2026-08-17.
+  The number is measured, not guessed. 2026-08-18, 15 runs each on this Mac:
+  `factorio --version` took a median of 47.6 ms on the 2.1.14 Steam install
+  (min 44.9, max 54.9) and 43.9 ms on the 2.0.77 standalone (min 41.7, max
+  44.6). Each printed 116 bytes or fewer, all on stdout and none on stderr,
+  which is the stderr fact above measured a fourth time. Ten seconds is about
+  200 times the median.
+
+  `refs sync --check` still launches the game binary on every candidate root,
+  even though it is documented as "Report only. Never fetches, never writes."
+  It only reads the version and exits, so this stays harmless - and it is now
+  bounded instead of unbounded. It is still surprising, and worth knowing
+  before anyone treats `--check` as inert.
+
+  **The bound is two deadlines, not one, so at worst 20 seconds per root.**
+  There are two waits: the poll loop waits for the process, and `recv_timeout`
+  then waits for the reader thread, each given the full 10 seconds. They are
+  additive whenever the child exits but something else still holds the write
+  end of stdout. Measured 2026-08-18 with a fake binary that prints, starts a
+  3 second background child and exits at once: the call returned the right
+  version after **3.18 seconds**, having waited on the grandchild rather than
+  the parent. That is the intended behaviour, not a defect: returning early
+  would drop output the child had already written, which is the failure the
+  reader thread exists to prevent. Two tests pin it, one per property, because
+  a single test cannot fail on both. `a_grandchild_holding_the_pipe_does_not_
+  lose_the_output` uses a grandchild shorter than the deadline and checks the
+  version still parses. `the_wait_for_a_held_pipe_is_bounded_by_the_deadline`
+  uses one that outlives the deadline, so a plain `recv()` takes 6 seconds
+  instead of 2 and fails. Both were mutation-checked on 2026-08-18.
+
+  The four tests for this are `#[cfg(unix)]`. A binary that hangs on demand has
+  to be a file the OS will run, and on Windows Rust's `Command` reaches
+  `CreateProcess`, which executes neither a shebang script nor a `.cmd` file;
+  making one there needs a second cargo target or a sixth dependency. CI is
+  ubuntu-latest, so all four run on every push. One more measured trap: a
+  script file written seconds ago is slow on its **first** exec on macOS, 345
+  to 438 ms across three runs while the rest of the suite was spawning too, so
+  the test that checks the kill gives its fake binary two seconds. At 200 ms
+  the shell was killed before it ran its own first line.
 - **No test touches `src/main.rs`.** Every CLI guard - the tag and version
   checks in each `refs` arm, the exit codes, the help text - runs untested.
   The crate has no CLI test harness, and building one needs a dev-dependency
