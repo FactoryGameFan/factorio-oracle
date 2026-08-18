@@ -55,6 +55,16 @@ pub fn is_clone(dir: &Path) -> bool {
 /// tag starting with `-` would be read by git as a flag, which is how an
 /// argument vector turns into an instruction.
 pub fn valid_tag(tag: &str) -> bool {
+    // `.` and `..` slip past the character test below, because both are made
+    // only of dots and dots are allowed. They are the two names the
+    // filesystem treats specially, so `cache.join("..")` resolves to the
+    // cache's parent - the exact escape this function exists to stop.
+    // Measured 2026-08-17: without these two lines `valid_tag("..")` returned
+    // true, and the traversal test passed only because every case it tried
+    // also held a separator.
+    if tag == "." || tag == ".." {
+        return false;
+    }
     !tag.is_empty()
         && !tag.starts_with('-')
         && tag
@@ -138,6 +148,23 @@ mod tests {
         assert!(!valid_tag("../../etc"));
         assert!(!valid_tag("a/b"));
         assert!(!valid_tag("a\\b"));
+    }
+
+    #[test]
+    fn the_two_dot_names_the_filesystem_treats_specially_are_rejected() {
+        // The cases the character allowlist cannot catch on its own: both are
+        // made only of dots, which the allowlist permits. `cache.join("..")`
+        // resolves to the cache's parent.
+        //
+        // The traversal test above passes only because each of its cases
+        // holds a separator, so `..` alone was never exercised. Found by
+        // review on 2026-08-17 after `valid_tag("..")` was confirmed to
+        // return true.
+        assert!(!valid_tag(".."));
+        assert!(!valid_tag("."));
+        // A name that is only dots but means nothing special stays legal:
+        // `join("...")` makes a directory literally called "...".
+        assert!(valid_tag("..."));
     }
 
     #[test]
