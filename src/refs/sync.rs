@@ -12,14 +12,12 @@
 //! exits 1 when the answer is no.
 
 use super::git;
-// `docs` is only referenced from the test module below, which checks that
-// `docs_standing`'s manually-built path agrees with `docs::cache_path`. A
-// plain `use super::{docs, git};` is unused outside `cfg(test)` and fails
-// `cargo clippy --all-targets -- -D warnings` on the non-test lib target.
-#[cfg(test)]
-use super::docs;
 use crate::spawn::Spawner;
 use std::path::{Path, PathBuf};
+
+// `docs` is imported by the test module rather than here. `docs_standing`
+// builds its own `<cache>/docs/<version>` path, so the only non-test use
+// would be none at all, and CI runs clippy with `-D warnings`.
 
 /// Where that version's docs can be read from, if anywhere.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,6 +166,7 @@ pub fn to_json(a: &Availability) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::refs::docs;
     use crate::spawn::SpawnResult;
     use std::cell::RefCell;
     use std::time::Duration;
@@ -299,10 +298,18 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_clone_is_not_ok() {
+    fn a_missing_clone_is_not_ok_even_with_a_tag_somehow_present() {
+        // Only `clone_present` is flipped. The first version of this test
+        // flipped both fields, so an `ok()` that ignored `clone_present`
+        // entirely still passed - found by mutation testing on 2026-08-17,
+        // the sixth vacuous test this plan produced.
+        //
+        // The state is unreachable through the CLI, which only asks about a
+        // tag once it has a clone. That is exactly the point: isolating one
+        // field is what lets this test fail for its own reason rather than
+        // its neighbour's.
         let mut a = available();
         a.clone_present = false;
-        a.tag_present = false;
         assert!(!a.ok());
     }
 
