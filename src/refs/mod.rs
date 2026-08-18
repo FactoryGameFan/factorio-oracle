@@ -13,6 +13,7 @@
 
 pub mod git;
 pub mod grep;
+pub mod worktree;
 
 use std::path::{Path, PathBuf};
 

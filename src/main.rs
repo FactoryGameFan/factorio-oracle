@@ -127,6 +127,18 @@ enum RefsAction {
         #[arg(long)]
         json: bool,
     },
+    /// Materialise a real tree at a tag, for tools that need a directory
+    Worktree {
+        /// The tag, for example 2.0.77
+        tag: String,
+        /// The factorio-data clone
+        #[arg(long)]
+        clone: Option<PathBuf>,
+        /// Remove the tree for this tag instead of making one. This also
+        /// clears the entry git wrote into the shared clone.
+        #[arg(long)]
+        remove: bool,
+    },
 }
 
 /// Resolves the factorio-data clone and checks it is one.
@@ -145,6 +157,14 @@ fn resolve_clone(explicit: Option<PathBuf>) -> anyhow::Result<PathBuf> {
         );
     }
     Ok(dir)
+}
+
+/// Resolves this tool's cache directory.
+fn resolve_cache() -> PathBuf {
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
+    let over = std::env::var_os("FACTORIO_ORACLE_CACHE").map(PathBuf::from);
+    let xdg = std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from);
+    factorio_oracle::refs::cache_dir(&home, over.as_deref(), xdg.as_deref())
 }
 
 fn main() -> anyhow::Result<()> {
@@ -412,6 +432,34 @@ fn main() -> anyhow::Result<()> {
             // matters is a human's call, the same split provenance uses.
             if report.empty() {
                 std::process::exit(1);
+            }
+        }
+        Command::Refs {
+            action: RefsAction::Worktree { tag, clone, remove },
+        } => {
+            if !factorio_oracle::refs::valid_tag(&tag) {
+                anyhow::bail!("{tag} is not a usable tag name");
+            }
+            let dir = resolve_clone(clone)?;
+            let cache = resolve_cache();
+            if remove {
+                factorio_oracle::refs::worktree::remove(
+                    &factorio_oracle::spawn::RealSpawner,
+                    &dir,
+                    &cache,
+                    &tag,
+                )?;
+                println!("Removed the worktree for {tag}.");
+            } else {
+                let path = factorio_oracle::refs::worktree::ensure(
+                    &factorio_oracle::spawn::RealSpawner,
+                    &dir,
+                    &cache,
+                    &tag,
+                )?;
+                // The path on its own line, so a caller can capture it:
+                //   cd "$(factorio-oracle refs worktree 2.0.77)"
+                println!("{}", path.display());
             }
         }
     }
