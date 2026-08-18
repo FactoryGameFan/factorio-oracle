@@ -212,13 +212,19 @@ code did. **A fake can only be wrong in the ways its author already considered.*
   FactorioMapWebUI unpacked from that archive. So for an installed version
   there is nothing to download, and `install.rs` already resolves `doc_dir`.
 - **Single docs files are published, and the archive never wins on bytes.**
-  The server gzips HTML but not JSON. At 2.0.45 `runtime-api.json` was
-  1,597,033 bytes with or without `Accept-Encoding: gzip`, while
-  `defines.html` went 506,148 -> 32,038 and `noise-expressions.html`
-  53,222 -> 11,966. The archive is 96 percent HTML: 267,489,280 bytes across
+  The server gzips HTML but not JSON. Measured **at 2.0.45**:
+  `runtime-api.json` was 1,597,033 bytes with or without
+  `Accept-Encoding: gzip`, while `defines.html` went 506,148 -> 32,038 and
+  `noise-expressions.html` 53,222 -> 11,966. That version's whole archive is
+  25,275,142 bytes, about 24 MB.
+
+  The composition below is **2.1.14**, whose archive is 45,547,463 bytes,
+  about 43 MB. Do not read the two versions as one set of numbers: a later
+  version has a bigger archive, and both figures are correct for their own
+  version. 2.1.14's archive is 96 percent HTML, 267,489,280 bytes across
   1,613 pages, about 11 KB each over the wire. **Fetching all 1,613 costs
-  about 17 MB against 43 MB for the archive**, so there is no file count at
-  which the archive is cheaper - it also ships images and a pagefind index.
+  about 17 MB against that 43 MB**, so there is no file count at which the
+  archive is cheaper - it also ships images and a pagefind index.
   What it would buy is one request instead of many, and search without
   knowing the filename. That is why there is no zip cache and no zip
   dependency. **The limit is that you cannot search a version nobody has

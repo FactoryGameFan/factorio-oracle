@@ -150,8 +150,10 @@ factorio-oracle refs sync 2.0.73 --check   # exits 1 if not
 ```
 
 The clone is `~/GitHub/factorio-data`, or whatever `FACTORIO_DATA_DIR` names.
-Worktrees and fetched docs go under `~/.cache/factorio-oracle`, or
-`FACTORIO_ORACLE_CACHE`.
+Worktrees and fetched docs go under `~/.cache/factorio-oracle`. Two overrides
+apply, in this order: `FACTORIO_ORACLE_CACHE` wins outright, and failing that
+`XDG_CACHE_HOME` is used with `factorio-oracle` appended, so a machine that
+already sets it for other tools gets the same treatment here.
 
 **The multi-tag verdict is the reason this exists.** "Is this value still the
 same two versions later" is a question every consumer repo has answered by
