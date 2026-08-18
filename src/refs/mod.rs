@@ -14,6 +14,7 @@
 pub mod docs;
 pub mod git;
 pub mod grep;
+pub mod sync;
 pub mod worktree;
 
 use std::path::{Path, PathBuf};

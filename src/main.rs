@@ -152,6 +152,24 @@ enum RefsAction {
         #[arg(long)]
         which: bool,
     },
+    /// Report whether a version's reference material can be read
+    Sync {
+        /// The version, for example 2.0.73
+        version: String,
+        /// The factorio-data clone
+        #[arg(long)]
+        clone: Option<PathBuf>,
+        /// Select an install by path, for installs outside the usual places
+        #[arg(long)]
+        factorio: Option<PathBuf>,
+        /// Report only. Never fetches, never writes, exits 1 when the version
+        /// cannot be read.
+        #[arg(long)]
+        check: bool,
+        /// Emit JSON instead of a table
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Resolves the factorio-data clone and checks it is one.
@@ -538,6 +556,70 @@ fn main() -> anyhow::Result<()> {
                 println!("{}", resolved.display());
             } else {
                 print!("{}", std::fs::read_to_string(&resolved)?);
+            }
+        }
+        Command::Refs {
+            action:
+                RefsAction::Sync {
+                    version,
+                    clone,
+                    factorio,
+                    check,
+                    json,
+                },
+        } => {
+            use factorio_oracle::refs::sync;
+
+            if !factorio_oracle::refs::valid_tag(&version) {
+                anyhow::bail!("{version} is not a usable tag name");
+            }
+
+            let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
+            let env_dir = std::env::var_os("FACTORIO_DATA_DIR").map(PathBuf::from);
+            let dir =
+                factorio_oracle::refs::data_clone(&home, clone.as_deref().or(env_dir.as_deref()));
+            let clone_present = factorio_oracle::refs::is_clone(&dir);
+            let spawner = factorio_oracle::spawn::RealSpawner;
+
+            let mut tag_present = false;
+            if clone_present {
+                tag_present = sync::tag_present(&spawner, &dir, &version)?;
+                // `sync` may fetch, because that is how availability gets
+                // achieved. `--check` never does, because it is a report.
+                if !tag_present && !check {
+                    sync::fetch_tags(&spawner, &dir)?;
+                    tag_present = sync::tag_present(&spawner, &dir, &version)?;
+                }
+            }
+
+            let env_bin = std::env::var_os("FACTORIO_BIN").map(PathBuf::from);
+            // Same reasoning as the `docs` arm: an install outside the
+            // candidate roots has to be nameable, and `select` will not
+            // return one whose version does not match.
+            let installed = install::select(
+                &home,
+                factorio.as_deref(),
+                env_bin.as_deref(),
+                Some(&version),
+            )
+            .map(|d| d.layout.doc_dir);
+            let cache = resolve_cache();
+
+            let report = sync::Availability {
+                version: version.clone(),
+                clone: dir,
+                clone_present,
+                tag_present,
+                docs: sync::docs_standing(installed.as_deref(), &cache, &version),
+            };
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&sync::to_json(&report))?);
+            } else {
+                print!("{}", sync::render(&report));
+            }
+            if check && !report.ok() {
+                std::process::exit(1);
             }
         }
     }
