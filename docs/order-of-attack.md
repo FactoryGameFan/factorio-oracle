@@ -19,10 +19,11 @@ prototype can be hundreds of lines of noise.
 
 **Check out the tag that matches what you target, not the newest one.** The four
 consumer repos target different versions on purpose, and a rule grounded against
-the wrong tag can be right about a game nobody is running. factorio-blueprint-editor
-learned this the hard way: it targets 2.0.45 to 2.0.73, but its blueprint corpus
-spans 2.0.32 to 2.1.12, and two of its twelve files declare 2.1.12. A rule
-checked only against the 2.0.73 tag predates those two files.
+the wrong tag can be right about a game nobody is running.
+factorio-blueprint-editor learned this the hard way: it targets 2.0.45 to
+2.0.73, but its blueprint corpus spans 2.0.32 to 2.1.12, and two of its twelve
+files declare 2.1.12. A rule checked only against the 2.0.73 tag predates those
+two files.
 
 **A clone is not a checkout.** `~/GitHub/factorio-data` is one working tree that
 three repos want at three different tags. Read at a tag without moving `HEAD`

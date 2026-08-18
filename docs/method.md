@@ -52,14 +52,14 @@ itself.
 Evaluate every probe against every rule, and report the rules that survive **all**
 of them, not the one that fits the last result.
 
-The zoom probe (#206) had three candidate rules for what a notch does from an
-off-ladder start. All three agree on every sample taken from a rung, so only an
-off-rung start says anything, and *which pair* it separates depends on where in
-the gap it sits. A start at 0.83 sits below its gap's midpoint, so a notch **in**
-rules out "multiply where you are" and cannot tell "snap to the nearest rung then
-step" from "move to the next rung in the direction of travel". Both say
-0.905724, exactly. A notch **out** from the same value separates them, 0.742997
-against 0.820335, and settled it.
+The zoom probe (#206, #211) had three candidate rules for what a notch does
+from an off-ladder start. All three agree on every sample taken from a rung, so
+only an off-rung start says anything, and *which pair* it separates depends on
+where in the gap it sits. A start at 0.83 sits below its gap's midpoint, so a
+notch **in** rules out "multiply where you are" and cannot tell "snap to the
+nearest rung then step" from "move to the next rung in the direction of
+travel". Both say 0.905724, exactly. A notch **out** from the same value
+separates them, 0.742997 against 0.820335, and settled it.
 
 Reading the first probe as a verdict would have adopted the wrong rule with a
 number matching to nine digits.
@@ -237,4 +237,5 @@ sibling repos, and enforced here by `factorio-oracle provenance check`.
   `core/lualib/collision-mask-defaults.lua` has `["cargo-bay"] = building_tall()`
   at 2.0.73, which carries the elevated rail layer, and `building()` at 2.1.12,
   which does not. A fixture saying only "2.1.12" would have been correct and
-  still produced the wrong rule.
+  still produced the wrong rule. Record the cross-check itself in a
+  `versionDifferences` field, not only the binary the capture came from.

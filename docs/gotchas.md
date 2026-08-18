@@ -56,8 +56,8 @@ re-measured here.
 - **`error("DUMPED-OK")` makes Factorio exit non-zero. That is success.** Key off
   the dump file existing, never the exit code. (both repos)
 
-- **Factorio writes nothing to stderr.** **Measured three ways on 2.1.14, and
-  again on Windows: stderr was zero bytes every time.** A control-stage
+- **Factorio writes nothing to stderr.** **Measured 2026-08-17, three ways on
+  2.1.14 and again on Windows: stderr was zero bytes every time.** A control-stage
   `error()`, a data-stage error, and an unknown command line flag all print to
   stdout. This tool's first version checked stderr for the sentinel, so
   `sentinelSeen` was false on every real run while sixty unit tests passed.
@@ -73,12 +73,12 @@ re-measured here.
   `__PATH__executable__/../data` is right for a macOS `.app` bundle and wrong
   everywhere else. Windows and Linux put the binary at `bin/x64/`, so it resolves
   to `bin/data` and the game exits 1 with "There is no package core in". Use an
-  absolute path. Windows accepts either slash style.
+  absolute path. Windows accepts either slash style. (this repo, PR #2)
 
 - **`--write-data` is not a CLI flag on any platform.** It is a `config.ini`
   `[path]` key reached with `-c`. `--dump-data` honours it, and the dump lands in
   that directory's own `script-output`, which is what makes a stale dump from an
-  earlier capture impossible to pick up. **Verified 2026-08-17 on 2.1.14.**
+  earlier capture impossible to pick up. **Measured 2026-08-17 on 2.1.14.**
 
 - **`--create` needs no map-gen settings file.** **Measured 2026-08-16 on
   2.1.14.** It generates a map, loads the mod and dumps with no settings file at
@@ -89,9 +89,10 @@ re-measured here.
   being generated. A noise probe does need one, to route
   `property_expression_names.elevation` at the probe expression. (both repos)
 
-- **`factorio.exe` is a GUI-subsystem binary on Windows.** Launched from
-  PowerShell it returns immediately, does not wait, and captures no stdout. The
-  run looks like a 0.03 second success that produced nothing. Use
+- **`factorio.exe` is a GUI-subsystem binary on Windows.** **Measured 2026-08-17**
+  on a standalone win64 install. Launched from PowerShell it returns immediately,
+  does not wait, and captures no stdout. The run looks like a 0.03 second success
+  that produced nothing. Use
   `Start-Process -Wait -NoNewWindow -PassThru -RedirectStandardOutput`. Rust's
   `Command::spawn` plus `wait_with_output` waits correctly, so this bites shell
   invocations rather than this tool.
@@ -102,13 +103,15 @@ re-measured here.
 ## Reading the answer back
 
 - **`--dump-data` is byte-identical across CPU architectures.** **Measured
-  2026-08-17.** macOS arm64 Steam and Windows x64 standalone, same build, both
-  produced 29,506,804 bytes with sha256 `acc944e6...` from byte-identical inputs.
+  2026-08-17 on 2.1.14, build 87180.** macOS arm64 Steam and Windows x64
+  standalone, same build, both produced 29,506,804 bytes with sha256
+  `acc944e6...` from byte-identical inputs.
   All 3,506 `.lua`/`.json`/`.cfg` files under `data/` matched too. So a capture
   is not platform-specific.
 
-- **`runtime-api.json` publishes no `defines` values.** **Measured on 2.1.14:**
-  across all 1,554 entries the only keys are `name`, `order` and `description`.
+- **`runtime-api.json` publishes no `defines` values.** **Measured 2026-08-17 on
+  2.1.14:** across all 1,554 entries the only keys are `name`, `order` and
+  `description`.
   Reading `order` as the value happens to be right for directions today, only
   because Factorio declares them clockwise from `north = 0` with no gaps. `order`
   is a dense `0..n-1` index, so it cannot express a gap, a duplicate, or a
@@ -133,8 +136,8 @@ re-measured here.
   the created entity: 16 raw acceptances around a straight rail are 4 actual
   signal positions. (factorio-blueprint-editor #133)
 
-- **`loadedMods` cannot come from `script.active_mods`**, because it never
-  reports `core` and the fixtures list it. Grep the game's stdout for
+- **`loadedMods` cannot come from `script.active_mods`** (this repo), because it
+  never reports `core` and the fixtures list it. Grep the game's stdout for
   `Loading mod <name>`.
 
 - **One case per blueprint string.** factorio-blueprint-editor's first probe put
@@ -198,9 +201,12 @@ re-measured here.
   `elevated-rail-collision.json` was captured on 2.1.12 for an editor targeting
   2.0.73, and one of twenty-one entries genuinely differs between those tags.
 
-- **2.0.77 ships five bundled mods, not six.** No `recycler`. So a 2.0-versus-2.1
-  comparison can never be perfectly single-variable on mod set. That is a
-  property of the game, not a setup error.
+- **2.0.77 ships five bundled mods, not six.** No `recycler`. **Measured
+  2026-08-17** on a standalone 2.0.77 install, and confirmed independently by the
+  fixture-level diff between 2.0.77 and 2.1.14, where `recycler` appears in
+  `loadedMods` only on the newer one. So a 2.0-versus-2.1 comparison can never be
+  perfectly single-variable on mod set. That is a property of the game, not a
+  setup error.
 
 - **The Space-Age paths force a planet's surface seed to the map seed, which no
   real save does.** A planet generates at `mapSeed + crc32(planet.name)`, zero
@@ -226,9 +232,16 @@ re-measured here.
   local has_new = pcall(function() return entity.get_fluid_box_pipe_connections end)
   ```
 
+- **Re-capturing on a second version finds drift you were not looking for.**
+  factorio-blueprint-editor re-took its entity footprints on a 2.0.x binary
+  rather than 2.1.12, and four entities move footprint between the two:
+  `tree-plant` and the three demolisher corpses. None was among the 155 that
+  repo knows, so nothing broke - but nothing would have told them either. (#142)
+
 - **Run a probe against two versions when you can.** The older one reproducing a
-  known-good answer is what earns trust in the new one. `examples/pumpjack-terminals`
-  does this, and it is how FactorioTools#81 was settled: all four rotations
+  known-good answer is what earns trust in the new one.
+  `examples/pumpjack-terminals` does this, and it is how FactorioTools#81 was
+  settled: all four rotations
   matched the planner on 2.0.77, which ruled out a broken probe, and two of them
   disagreed on 2.1.14.
 
@@ -252,7 +265,7 @@ being a usable diff.
   representation, never a fixed precision, never widened to f64. Scoring a port
   by exact-match count beats any error bound: two kernels shared an identical
   worst error of 2.682e-7 and differed by 42 exact matches of 512.
-  (FactorioMapWebUI)
+  (FactorioMapWebUI, `docs/noise/basis-noise-NOTES.md`)
 
 ## The lesson underneath all of these
 
