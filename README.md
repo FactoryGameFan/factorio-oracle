@@ -117,6 +117,67 @@ because an ignore rule that costs nothing gets used without thinking.
 claim.** Never edit one to make it current, and never edit one to make a test
 pass. A mismatch is a finding.
 
+## Reference material
+
+Most questions about Factorio are answered by Lua that ships in the clear at
+`github.com/wube/factorio-data`, one git tag per release. The catch is that
+one clone has one working tree, and several repos want several versions of it
+at once. Checking a tag out is how one repo silently breaks another's read.
+
+So this reads at a tag and never moves `HEAD`.
+
+```bash
+# One file at a tag.
+factorio-oracle refs show 2.0.77 base/info.json
+
+# Search one tag. Output is git grep's, with the <tag>: prefix removed.
+factorio-oracle refs grep supply_area_distance --tag 2.1.14
+
+# Search several, and find out whether the answer moved.
+factorio-oracle refs grep support_range --tag 2.0.73 --tag 2.1.12 \
+  --path elevated-rails/prototypes/entity/elevated-rails.lua
+
+# A real directory, for ripgrep or an editor or a Lua parser.
+cd "$(factorio-oracle refs worktree 2.0.77)"
+factorio-oracle refs worktree 2.0.77 --remove
+
+# One Lua API docs file. An installed game answers with no network.
+factorio-oracle refs docs 2.1.14 runtime-api.json --which
+
+# Can this version be read at all?
+factorio-oracle refs sync 2.0.73
+factorio-oracle refs sync 2.0.73 --check   # exits 1 if not
+```
+
+The clone is `~/GitHub/factorio-data`, or whatever `FACTORIO_DATA_DIR` names.
+Worktrees and fetched docs go under `~/.cache/factorio-oracle`, or
+`FACTORIO_ORACLE_CACHE`.
+
+**The multi-tag verdict is the reason this exists.** "Is this value still the
+same two versions later" is a question every consumer repo has answered by
+hand, by checking a tag out or reading two web pages, and then written the
+answer into a fixture as prose. Two greps answer it, and the comparison
+ignores line numbers on purpose: a value that moved down the file has not
+changed.
+
+**`sync` reports availability, not state.** Since nothing here checks anything
+out, there is no pinned working tree to keep in sync and no lock file to go
+stale. `sync` answers "is the clone here, is the tag fetched, are the docs
+reachable", and may fetch tags to make the answer yes. `--check` never fetches
+and never writes.
+
+**Docs come from an installed game first.** Measured on 2.1.14: the install's
+`doc-html/` is byte-identical to the published archive's contents across all
+3,370 files, and the install even ships that archive itself, with the same
+sha256. So for a version you have there is nothing to download. For a version
+you do not have, one file is fetched and cached - `runtime-api.json` at 2.0.45
+is 1.6 MB against 24 MB for the whole archive.
+
+The limit that follows, stated rather than hidden: **you cannot search a
+version nobody has installed**, because you cannot grep files you never
+fetched. Install that version, or use `refs grep`, which searches the Lua
+rather than the docs.
+
 ## Examples
 
 - [`examples/pumpjack-terminals`](examples/pumpjack-terminals) - a `create` probe

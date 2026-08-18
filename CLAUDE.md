@@ -43,18 +43,27 @@ cat /tmp/pj/write/script-output/oracle-dump.json
 # Reproduce FactorioTools' committed fixture
 cargo run -- run  --probe dump-data.json --work-dir /tmp/w > /tmp/run.json
 cargo run -- trim --run /tmp/run.json --spec trim-spec.json --out fixture.json [--check]
+
+# Read factorio-data at a tag. Never moves HEAD in the shared clone.
+cargo run -- refs grep support_range --tag 2.0.73 --tag 2.1.12
+cargo run -- refs worktree 2.0.77          # a real tree, under the cache
+cargo run -- refs docs 2.1.14 runtime-api.json --which
 ```
 
-Test counts to expect: **159 unit tests**, plus **8 integration tests** split
-across three files. `tests/acceptance.rs` has 3: two run offline against a
+Test counts to expect: **244 unit tests**, plus **12 integration tests** split
+across four files. `tests/acceptance.rs` has 3: two run offline against a
 committed fixture, and one (`the_real_install_reproduces_it_too`) is
 install-gated. `tests/provenance.rs` has 2: one always-on, and one gated on
 the `FACTORIO_ORACLE_PROVENANCE_DIR` environment variable naming another
 repo's fixture directory - not an install gate, so it skips even when
 Factorio is present. `tests/real_game.rs` has 3, all install-gated. That is
-**4 install-gated tests** in total. Without a real Factorio install they skip
-rather than fail, so a green run on a machine with no game proves less than it
-looks. Check which happened before trusting it.
+**4 install-gated tests** in total. `tests/refs.rs` has 4, all gated on
+finding the `~/GitHub/factorio-data` clone (or wherever `FACTORIO_DATA_DIR`
+points) - a separate gate from the install one, so a machine can have
+Factorio and no clone, or a clone and no Factorio. Without a real Factorio
+install, and now without the clone, these tests skip rather than fail, so a
+green run on a machine with neither proves less than it looks. Check which
+happened before trusting it.
 
 ## Layout
 
@@ -72,6 +81,7 @@ looks. Check which happened before trusting it.
 | `numbers.rs` | Preserving the bits the game produced |
 | `trim/` | Cutting a full `data.raw` dump down to a consumer's slice |
 | `provenance/` | Which Factorio each fixture came from, and whether that record is still honest |
+| `refs/` | Reading factorio-data at a tag, and the Lua API docs, without moving HEAD |
 
 Five run modes, and **the success predicate differs per mode**: `dump-data`
 (no mod at all, the mod dir exists only to be empty), `create`, `interactive`
@@ -175,6 +185,48 @@ code did. **A fake can only be wrong in the ways its author already considered.*
   decimal, with no error. Recorded as a negative result so nobody spends an
   afternoon ruling it out. Provenance entries stay a `Value` anyway, because
   only two keys are required and the rest must round-trip untouched.
+- **`~/GitHub/factorio-data` is on `master`, and that makes one consumer's
+  drift check a coincidence.** Verified 2026-08-17: branch `master`, clean,
+  548 tags, and `base/info.json` reads 2.1.14, which is also the newest tag.
+  FactorioMapWebUI's `refs:sync --check` greps that file rather than asking
+  git anything, so it reads a coincidence as a pin. `refs` never moves `HEAD`
+  there, and `tests/refs.rs` asserts the clone is unchanged after a real run.
+- **Reading at a tag is byte-stable across platforms.** `git show
+  2.1.14:base/info.json` returned the same 193 bytes with `core.autocrlf`
+  unset, forced false and forced true, matching `git cat-file blob`. So no
+  line-ending rewriting is needed. A **worktree** checkout is a different
+  path and was not measured this way.
+- **factorio-data holds nothing binary.** At tag 2.1.14 it is 327 files: 296
+  `.lua`, 27 `.json`, 3 `.txt`, 1 `.md`, and no path contains a colon. That is
+  what makes it safe to carry `git` output through `SpawnResult`'s `String`,
+  and to split a grep line on colons.
+- **A worktree costs 0.077 seconds and 8.6 MB**, two at one tag coexist, and
+  `git worktree add` creates missing parent directories. It also writes an
+  entry into the shared clone's `.git/worktrees/`, 168 KB for three, which is
+  the one thing `refs` writes to a clone it does not own. That is why
+  `refs worktree --remove` exists.
+- **The installed game ships the API docs and the published archive too.**
+  Measured 2026-08-17 on 2.1.14: `doc-html/static/archive.zip` is byte-identical
+  to `lua-api.factorio.com/2.1.14/static/archive.zip`, both 45,547,463 bytes
+  and sha256 `87012e1c...`, and all 3,370 other files match the tree
+  FactorioMapWebUI unpacked from that archive. So for an installed version
+  there is nothing to download, and `install.rs` already resolves `doc_dir`.
+- **Single docs files are published, and the archive never wins on bytes.**
+  The server gzips HTML but not JSON. At 2.0.45 `runtime-api.json` was
+  1,597,033 bytes with or without `Accept-Encoding: gzip`, while
+  `defines.html` went 506,148 -> 32,038 and `noise-expressions.html`
+  53,222 -> 11,966. The archive is 96 percent HTML: 267,489,280 bytes across
+  1,613 pages, about 11 KB each over the wire. **Fetching all 1,613 costs
+  about 17 MB against 43 MB for the archive**, so there is no file count at
+  which the archive is cheaper - it also ships images and a pagefind index.
+  What it would buy is one request instead of many, and search without
+  knowing the filename. That is why there is no zip cache and no zip
+  dependency. **The limit is that you cannot search a version nobody has
+  installed**, which is a real gap: the design's own example,
+  `control:temperature:frequency`, appears only in `noise-expressions.html`.
+- **`curl -f` exited 56 on a 404, not the 22 the manual suggests.** Measured
+  against an unpublished version. So `refs docs` treats any non-zero exit as
+  a failure and prints curl's own message rather than matching a number.
 
 ### Writing a probe
 
