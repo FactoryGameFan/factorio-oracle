@@ -176,6 +176,19 @@ code did. **A fake can only be wrong in the ways its author already considered.*
   afternoon ruling it out. Provenance entries stay a `Value` anyway, because
   only two keys are required and the rest must round-trip untouched.
 
+### Writing a probe
+
+Three documents in `docs/` carry the accumulated probe-writing knowledge, lifted
+with attribution from the sibling repos. Read them before writing a new probe;
+they are the reason a fifth repo does not have to learn the same lessons again.
+
+- `docs/order-of-attack.md` - factorio-data first, then the oracle, then the
+  binary.
+- `docs/method.md` - the epistemics. A control must be able to fail while the
+  hypothesis holds; last man standing is not a measurement.
+- `docs/gotchas.md` - the facts, each of which cost a run. Overlaps this section
+  on purpose: the facts above are the ones this tool's own code depends on.
+
 ### Writing Lua for a probe
 
 - **Factorio 2.1 deleted `LuaEntity.fluidbox` and the whole `LuaFluidBox`

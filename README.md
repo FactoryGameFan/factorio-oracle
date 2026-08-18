@@ -124,6 +124,24 @@ pass. A mismatch is a finding.
   goes. Run against 2.0.77 and 2.1.14, it settled FactorioTools issue #81 and
   caught a breaking runtime API change on the way.
 
+## Writing a probe
+
+Three documents carry what probe-writing has cost across the four repos so far.
+They are prose for a person, not input to anything.
+
+- [`docs/order-of-attack.md`](docs/order-of-attack.md) - which source to ask
+  first. factorio-data, then the oracle, then the binary, and why that order
+  saves the most time.
+- [`docs/method.md`](docs/method.md) - how to design a probe whose answer you can
+  trust. Controls that can fail, refuting the rival rule, and why a probe entity
+  is part of the question.
+- [`docs/gotchas.md`](docs/gotchas.md) - specific facts about Factorio and its
+  API, each of which cost a failed run.
+
+Lifted with attribution from `factorio-blueprint-editor` and `FactorioMapWebUI`,
+which learned most of it the expensive way. That borrowing had been done by hand,
+repo to repo, and drifted; this gives it one home.
+
 ## Scope
 
 Behavioural reverse engineering for interoperability - understanding what the
