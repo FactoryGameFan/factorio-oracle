@@ -1,3 +1,15 @@
 /target
 /refs
 .DS_Store
+
+# Factorio installs kept for multi-version work. A 5.1 GB game bundle is not
+# source, and it is not ours to redistribute. The directory-level rule means
+# git never descends into it, so `git status` does not stat thousands of files.
+#
+# What lives here today: factorio-2.0.77.app, a full mac-arm64 build 84539.
+# It is deliberately OUTSIDE every candidate root in install.rs, so discovery
+# does not find it and `installs list` keeps reporting only real install
+# locations. Name it explicitly instead:
+#   cargo run -- provenance report tests/fixtures \
+#     --factorio installs/factorio-2.0.77.app
+/installs/

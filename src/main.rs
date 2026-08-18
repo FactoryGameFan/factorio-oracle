@@ -62,6 +62,11 @@ enum Command {
         #[command(subcommand)]
         action: ProvenanceAction,
     },
+    /// Read Factorio's shipped Lua and API docs at a version
+    Refs {
+        #[command(subcommand)]
+        action: RefsAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -90,6 +95,108 @@ enum ProvenanceAction {
         #[arg(long)]
         factorio: Option<PathBuf>,
     },
+}
+
+#[derive(Subcommand)]
+enum RefsAction {
+    /// Print one file from factorio-data at a tag. Moves no HEAD.
+    Show {
+        /// The tag, for example 2.0.73
+        tag: String,
+        /// The path inside the repo, for example base/info.json
+        path: String,
+        /// The factorio-data clone. Defaults to FACTORIO_DATA_DIR, then
+        /// ~/GitHub/factorio-data.
+        #[arg(long)]
+        clone: Option<PathBuf>,
+    },
+    /// Search factorio-data at one tag or several. Moves no HEAD.
+    Grep {
+        /// The pattern, passed to git grep
+        pattern: String,
+        /// A tag to search. Repeat it to compare versions.
+        #[arg(long = "tag", required = true)]
+        tags: Vec<String>,
+        /// Limit the search to these paths
+        #[arg(long = "path")]
+        paths: Vec<String>,
+        /// The factorio-data clone
+        #[arg(long)]
+        clone: Option<PathBuf>,
+        /// Emit JSON instead of grep-style lines
+        #[arg(long)]
+        json: bool,
+    },
+    /// Materialise a real tree at a tag, for tools that need a directory
+    Worktree {
+        /// The tag, for example 2.0.77
+        tag: String,
+        /// The factorio-data clone
+        #[arg(long)]
+        clone: Option<PathBuf>,
+        /// Remove the tree for this tag instead of making one. This also
+        /// clears the entry git wrote into the shared clone.
+        #[arg(long)]
+        remove: bool,
+    },
+    /// Print a Lua API docs file. Uses an installed game before the network.
+    Docs {
+        /// The version, for example 2.0.45
+        version: String,
+        /// The path inside the docs, for example runtime-api.json
+        path: String,
+        /// Select an install by path, for installs outside the usual places
+        #[arg(long)]
+        factorio: Option<PathBuf>,
+        /// Print where the file is instead of printing it. Still fetches the
+        /// file first if it is not already present.
+        #[arg(long)]
+        which: bool,
+    },
+    /// Report whether a version's reference material can be read
+    Sync {
+        /// The version, for example 2.0.73
+        version: String,
+        /// The factorio-data clone
+        #[arg(long)]
+        clone: Option<PathBuf>,
+        /// Select an install by path, for installs outside the usual places
+        #[arg(long)]
+        factorio: Option<PathBuf>,
+        /// Report only. Never fetches, never writes, exits 1 when the version
+        /// cannot be read.
+        #[arg(long)]
+        check: bool,
+        /// Emit JSON instead of a table
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// Resolves the factorio-data clone and checks it is one.
+///
+/// `FACTORIO_DATA_DIR` is FactorioMapWebUI's own override name, reused so
+/// both tools read one setting.
+fn resolve_clone(explicit: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
+    let env_dir = std::env::var_os("FACTORIO_DATA_DIR").map(PathBuf::from);
+    let dir = factorio_oracle::refs::data_clone(&home, explicit.as_deref().or(env_dir.as_deref()));
+    if !factorio_oracle::refs::is_clone(&dir) {
+        anyhow::bail!(
+            "no factorio-data clone at {}. Clone https://github.com/wube/factorio-data there, \
+             or set FACTORIO_DATA_DIR.",
+            dir.display()
+        );
+    }
+    Ok(dir)
+}
+
+/// Resolves this tool's cache directory.
+fn resolve_cache() -> PathBuf {
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
+    let over = std::env::var_os("FACTORIO_ORACLE_CACHE").map(PathBuf::from);
+    let xdg = std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from);
+    factorio_oracle::refs::cache_dir(&home, over.as_deref(), xdg.as_deref())
 }
 
 fn main() -> anyhow::Result<()> {
@@ -303,6 +410,230 @@ fn main() -> anyhow::Result<()> {
                     &factorio_oracle::provenance::report::compare(&manifest, &found.triple())
                 )
             );
+        }
+        Command::Refs {
+            action: RefsAction::Show { tag, path, clone },
+        } => {
+            if !factorio_oracle::refs::valid_tag(&tag) {
+                anyhow::bail!("{tag} is not a usable tag name");
+            }
+            let dir = resolve_clone(clone)?;
+            print!(
+                "{}",
+                factorio_oracle::refs::grep::show(
+                    &factorio_oracle::spawn::RealSpawner,
+                    &dir,
+                    &tag,
+                    &path
+                )?
+            );
+        }
+        Command::Refs {
+            action:
+                RefsAction::Grep {
+                    pattern,
+                    tags,
+                    paths,
+                    clone,
+                    json,
+                },
+        } => {
+            for tag in &tags {
+                if !factorio_oracle::refs::valid_tag(tag) {
+                    anyhow::bail!("{tag} is not a usable tag name");
+                }
+            }
+            let dir = resolve_clone(clone)?;
+            let report = factorio_oracle::refs::grep::search(
+                &factorio_oracle::spawn::RealSpawner,
+                &dir,
+                &pattern,
+                &tags,
+                &paths,
+            )?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&factorio_oracle::refs::grep::to_json(&report))?
+                );
+            } else {
+                print!("{}", factorio_oracle::refs::grep::render(&report));
+            }
+            // grep's convention, kept: nothing found is exit 1. A verdict of
+            // `differs` is NOT a failure - it is the finding, and whether it
+            // matters is a human's call, the same split provenance uses.
+            if report.empty() {
+                std::process::exit(1);
+            }
+        }
+        Command::Refs {
+            action: RefsAction::Worktree { tag, clone, remove },
+        } => {
+            if !factorio_oracle::refs::valid_tag(&tag) {
+                anyhow::bail!("{tag} is not a usable tag name");
+            }
+            let dir = resolve_clone(clone)?;
+            let cache = resolve_cache();
+            if remove {
+                // `worktree::remove` returns early, doing nothing, when there
+                // is no tree for this tag - cleanup that fails on a repeat
+                // run cannot be run twice. So the message has to be checked
+                // against the same path `remove` looks at, not assumed.
+                let existed = factorio_oracle::refs::worktree::worktree_path(&cache, &tag).exists();
+                factorio_oracle::refs::worktree::remove(
+                    &factorio_oracle::spawn::RealSpawner,
+                    &dir,
+                    &cache,
+                    &tag,
+                )?;
+                if existed {
+                    println!("Removed the worktree for {tag}.");
+                } else {
+                    println!("No worktree for {tag} to remove.");
+                }
+            } else {
+                let path = factorio_oracle::refs::worktree::ensure(
+                    &factorio_oracle::spawn::RealSpawner,
+                    &dir,
+                    &cache,
+                    &tag,
+                )?;
+                // The path on its own line, so a caller can capture it:
+                //   cd "$(factorio-oracle refs worktree 2.0.77)"
+                println!("{}", path.display());
+            }
+        }
+        Command::Refs {
+            action:
+                RefsAction::Docs {
+                    version,
+                    path,
+                    factorio,
+                    which,
+                },
+        } => {
+            use factorio_oracle::refs::docs::{self, DocsSource};
+
+            // The version is joined onto the cache directory by `cache_path`
+            // and onto the URL by `url`, so it needs the same guard the tag
+            // arms use. The `sync` arm checks it; this one did not.
+            anyhow::ensure!(
+                factorio_oracle::refs::valid_tag(&version),
+                "{version} is not a usable version"
+            );
+            anyhow::ensure!(
+                docs::safe_relative(&path),
+                "{path} is not a usable docs path"
+            );
+
+            let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
+            let env_bin = std::env::var_os("FACTORIO_BIN").map(PathBuf::from);
+            // An installed game of that version answers with no network at
+            // all. Measured: its doc-html is byte-identical to the published
+            // archive's contents.
+            //
+            // `select` is used rather than a bare `discover`, so an install
+            // outside the candidate roots can be named. That is not a corner
+            // case: the 2.0.77 build on this machine sits in this repo at
+            // installs/factorio-2.0.77.app, which discovery does not search
+            // and should not - it is gitignored and outside every candidate
+            // root on purpose, so no install-gated test changes which install
+            // it picks. `select` also
+            // requires an exact triple match, so naming a 2.1.14 install
+            // while asking for 2.0.77 docs cannot quietly answer with the
+            // wrong version - it falls through to the cache instead.
+            let installed = install::select(
+                &home,
+                factorio.as_deref(),
+                env_bin.as_deref(),
+                Some(&version),
+            )
+            .map(|d| d.layout.doc_dir);
+            let cache = resolve_cache();
+
+            let resolved = match docs::locate(installed.as_deref(), &cache, &version, &path) {
+                DocsSource::Install(p) => p,
+                DocsSource::Cache(p) => p,
+                DocsSource::Fetch { .. } => docs::fetch(
+                    &factorio_oracle::spawn::RealSpawner,
+                    &cache,
+                    &version,
+                    &path,
+                )?,
+            };
+
+            if which {
+                println!("{}", resolved.display());
+            } else {
+                print!("{}", std::fs::read_to_string(&resolved)?);
+            }
+        }
+        Command::Refs {
+            action:
+                RefsAction::Sync {
+                    version,
+                    clone,
+                    factorio,
+                    check,
+                    json,
+                },
+        } => {
+            use factorio_oracle::refs::sync;
+
+            // Matches the `docs` arm's wording: the positional is called
+            // `version` here, not `tag`, so the error should say so too.
+            anyhow::ensure!(
+                factorio_oracle::refs::valid_tag(&version),
+                "{version} is not a usable version"
+            );
+
+            let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
+            let env_dir = std::env::var_os("FACTORIO_DATA_DIR").map(PathBuf::from);
+            let dir =
+                factorio_oracle::refs::data_clone(&home, clone.as_deref().or(env_dir.as_deref()));
+            let clone_present = factorio_oracle::refs::is_clone(&dir);
+            let spawner = factorio_oracle::spawn::RealSpawner;
+
+            let mut tag_present = false;
+            if clone_present {
+                tag_present = sync::tag_present(&spawner, &dir, &version)?;
+                // `sync` may fetch, because that is how availability gets
+                // achieved. `--check` never does, because it is a report.
+                if !tag_present && !check {
+                    sync::fetch_tags(&spawner, &dir)?;
+                    tag_present = sync::tag_present(&spawner, &dir, &version)?;
+                }
+            }
+
+            let env_bin = std::env::var_os("FACTORIO_BIN").map(PathBuf::from);
+            // Same reasoning as the `docs` arm: an install outside the
+            // candidate roots has to be nameable, and `select` will not
+            // return one whose version does not match.
+            let installed = install::select(
+                &home,
+                factorio.as_deref(),
+                env_bin.as_deref(),
+                Some(&version),
+            )
+            .map(|d| d.layout.doc_dir);
+            let cache = resolve_cache();
+
+            let report = sync::Availability {
+                version: version.clone(),
+                clone: dir,
+                clone_present,
+                tag_present,
+                docs: sync::docs_standing(installed.as_deref(), &cache, &version),
+            };
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&sync::to_json(&report))?);
+            } else {
+                print!("{}", sync::render(&report));
+            }
+            if check && !report.ok() {
+                std::process::exit(1);
+            }
         }
     }
     Ok(())
