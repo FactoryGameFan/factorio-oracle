@@ -7,6 +7,8 @@
 //! different question, it needs a binary, and it needs a human, so it lives in
 //! `provenance report` and never fails.
 
+use factorio_oracle::install;
+use factorio_oracle::provenance::report;
 use factorio_oracle::provenance::{check::check, manifest, walk_fixtures};
 use std::path::{Path, PathBuf};
 
@@ -89,5 +91,69 @@ fn a_manifest_written_by_another_repo_agrees_with_this_check() {
         report.malformed.is_empty(),
         "entries that are not well formed: {:?}",
         report.malformed
+    );
+}
+
+/// Runs the version comparison against a binary OLDER than this crate's own
+/// fixtures, which is the only way to reach `Standing::NewerThanBinary`.
+///
+/// Gated on `FACTORIO_ORACLE_OLD_FACTORIO` naming that install, following
+/// the `FACTORIO_ORACLE_PROVENANCE_DIR` test above. It is not an install
+/// gate: a machine can have Factorio and still not have an *old* one, and on
+/// this machine the old one is deliberately outside every candidate root, so
+/// discovery cannot find it and must not.
+///
+/// Why it is worth having at all. Every other arm of `compare` is exercised
+/// by a real run somewhere, and this one never was - the fixtures are 2.1.14
+/// and the only binary anyone could reach was 2.1.14 too. A branch that has
+/// only ever run against a fake is a branch whose author's beliefs are the
+/// only thing holding it up.
+///
+/// Run it with:
+///   FACTORIO_ORACLE_OLD_FACTORIO=installs/factorio-2.0.77.app \
+///     cargo test --test provenance -- --nocapture
+#[test]
+fn a_binary_older_than_the_fixtures_reports_them_as_newer() {
+    let Some(root) = std::env::var_os("FACTORIO_ORACLE_OLD_FACTORIO").map(PathBuf::from) else {
+        eprintln!(
+            "skipping: set FACTORIO_ORACLE_OLD_FACTORIO to an install older than \
+             tests/fixtures to run this."
+        );
+        return;
+    };
+
+    let layout = install::resolve_layout(&root)
+        .unwrap_or_else(|| panic!("{} does not look like an install", root.display()));
+    let version = install::read_version(&layout.binary)
+        .unwrap_or_else(|| panic!("{} would not report a version", layout.binary.display()));
+
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let manifest = manifest::load(&dir).expect("this crate's own manifest should load");
+    let report = report::compare(&manifest, &version.triple());
+
+    eprintln!("binary {}\n{}", version.line, report::render(&report));
+
+    // The point of the test. Assert the arm was reached rather than asserting
+    // a count, because the fixture count changes whenever a fixture is added
+    // and the standing does not.
+    assert!(
+        report
+            .groups
+            .iter()
+            .any(|g| g.standing == report::Standing::NewerThanBinary),
+        "an install older than the fixtures should put at least one group in \
+         NewerThanBinary, got: {:?}",
+        report
+            .groups
+            .iter()
+            .map(|g| (&g.version, g.standing))
+            .collect::<Vec<_>>()
+    );
+
+    // And the half that would have caught a swapped standing string: nothing
+    // can be stale, because every fixture is newer than this binary.
+    assert_eq!(
+        report.stale, 0,
+        "no fixture can predate a binary older than all of them"
     );
 }
