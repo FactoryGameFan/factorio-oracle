@@ -115,6 +115,14 @@ code did. **A fake can only be wrong in the ways its author already considered.*
   back "no dump was written ... factorio_version mismatch" while its 270 KB sat
   in the report's own `files` array. `create` keys success off the one filename
   `oracle-dump.json`, which is this tool's contract rather than the game's.
+- **That first consumer probe worked, and its answer held on both versions.**
+  FactorioMapWebUI #234 recovered `basis_noise`'s 256-slot gradient table from
+  the running game rather than deriving it from a formula, and 2.0.77 and 2.1.14
+  returned byte-identical captures. It took three of that repo's fixtures from
+  473/512, 36/38 and 231/266 bit-exact to 512/512, 38/38 and 266/266, all at
+  worst error 0, with no change to its kernel. So the first real use of this
+  tool by a consumer settled something its own test suite had carried as a
+  known gap for a year.
 - **Omission in `mod-list.json` means enabled.** Factorio rewrites the file at
   startup and adds back every bundled mod the file does not mention, with
   `enabled: true`. A file naming only `base` comes back naming five, all loaded.

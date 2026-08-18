@@ -252,10 +252,10 @@ re-measured here.
   one it is has to be measured.** **Measured 2026-08-18** on 2.0.77 (build 84539)
   and 2.1.14 (build 87180): `basis_noise`'s 256-slot gradient table recovers
   byte-identically from both, across 4,352 samples per axis, and the recovered
-  table also scores 512 of 512 exact against a FactorioMapWebUI fixture captured
-  on 2.1.11. Three versions, one table. The second run cost one command, and a
-  disagreement would have been a finding larger than the probe that found it.
-  (FactorioMapWebUI #234)
+  table also scores 512 of 512 exact against a FactorioMapWebUI fixture first
+  captured on 2.1.11 and re-verified bit-for-bit on 2.1.12. Four versions, one
+  table. The second run cost one command, and a disagreement would have been a
+  finding larger than the probe that found it. (FactorioMapWebUI #234)
 
 - **Run a probe against two versions when you can.** The older one reproducing a
   known-good answer is what earns trust in the new one.
