@@ -141,6 +141,31 @@ fn a_pattern_that_matches_nothing_is_an_answer_and_not_an_error() {
     assert_eq!(report.verdict, grep::Verdict::Single);
 }
 
+/// Removes the worktree even when an assertion panics first.
+///
+/// Without this, a panic between `ensure` and `remove` leaves an entry in
+/// `~/GitHub/factorio-data/.git/worktrees/` with no directory behind it -
+/// mess in a clone this tool does not own, left exactly in the failure case
+/// where somebody is about to go looking at that clone. `TempDir` cleans up
+/// the tree on disk and knows nothing about git's own bookkeeping.
+///
+/// Found by the Task 7 review on 2026-08-17: the file whose whole purpose is
+/// proving the shared clone is untouched could, on failure, be the thing that
+/// touched it.
+struct RemoveOnDrop<'a> {
+    clone: &'a Path,
+    cache: &'a Path,
+    tag: &'a str,
+}
+
+impl Drop for RemoveOnDrop<'_> {
+    fn drop(&mut self) {
+        // Best effort. A failure here must not mask the assertion that is
+        // already unwinding.
+        let _ = refs::worktree::remove(&RealSpawner, self.clone, self.cache, self.tag);
+    }
+}
+
 #[test]
 fn a_worktree_is_a_real_tree_at_that_tag_and_removing_it_leaves_no_trace() {
     let Some(clone) = find_clone() else {
@@ -155,6 +180,13 @@ fn a_worktree_is_a_real_tree_at_that_tag_and_removing_it_leaves_no_trace() {
 
     let path = refs::worktree::ensure(&RealSpawner, &clone, cache.path(), "2.0.77")
         .expect("2.0.77 is a real tag");
+    // Declared after `cache`, so it drops before it: the temporary directory
+    // is still there when the guard runs.
+    let _cleanup = RemoveOnDrop {
+        clone: &clone,
+        cache: cache.path(),
+        tag: "2.0.77",
+    };
     let info = std::fs::read_to_string(path.join("base/info.json"))
         .expect("a worktree should hold real files");
     assert!(info.contains("\"version\": \"2.0.77\""));
@@ -167,6 +199,9 @@ fn a_worktree_is_a_real_tree_at_that_tag_and_removing_it_leaves_no_trace() {
         "adding a worktree must not move the main tree's HEAD"
     );
 
+    // The explicit remove is what the test is asserting about. The guard
+    // above then runs a second time at end of scope and finds nothing to do,
+    // because `remove` returns Ok when the path is already gone.
     refs::worktree::remove(&RealSpawner, &clone, cache.path(), "2.0.77")
         .expect("removing should work");
 
