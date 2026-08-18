@@ -25,10 +25,6 @@ pub const UNKNOWN: &str = "unknown";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Manifest {
-    /// An array of strings, so a long explanation stays readable in a diff.
-    #[serde(rename = "_comment", default)]
-    pub comment: Vec<String>,
-
     /// The ratchet: how many entries may say `unknown`.
     ///
     /// `None` means the manifest never declared one, which `check` reports as
@@ -94,10 +90,11 @@ pub fn parse_triple(version: &str) -> Option<(u32, u32, u32)> {
 /// The design wrote it as an enum of `stated`, `inferred` and `unknown` plus
 /// free text. Measured across MapWebUI's 100 entries, the first word is
 /// `stated` 48 times, `captured` 34, `RE-CAPTURED` 8, `inferred` 4,
-/// `re-captured` 3, `UNDOCUMENTED` once, and twice it is just `the`. The grade
-/// is a habit of phrasing, not a field, and enforcing it would reject 45 of the
-/// 100. The grade that is real is `factorioVersion == "unknown"`, and that is
-/// what the ratchet counts.
+/// `re-captured` 3, `the` 2, `UNDOCUMENTED` 1 - which sums to 100. The design's
+/// enum was `stated | inferred | unknown`, which accepts `stated` (48) plus
+/// `inferred` (4), 52 of the 100 first words, and rejects the other 48. The
+/// grade is a habit of phrasing, not a field. The grade that is real is
+/// `factorioVersion == "unknown"`, and that is what the ratchet counts.
 pub fn entry_problem(entry: &serde_json::Value) -> Option<String> {
     let Some(map) = entry.as_object() else {
         return Some("entry is not an object".to_string());
@@ -135,7 +132,6 @@ mod tests {
             "notFixtures": { "README.md": "prose, not ground truth" }
         }"#;
         let m: Manifest = serde_json::from_str(text).expect("should parse");
-        assert_eq!(m.comment.len(), 1);
         assert_eq!(m.max_unknown, Some(1));
         assert_eq!(m.fixtures.len(), 2);
         assert_eq!(m.not_fixtures.len(), 1);

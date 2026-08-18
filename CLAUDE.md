@@ -45,8 +45,16 @@ cargo run -- run  --probe dump-data.json --work-dir /tmp/w > /tmp/run.json
 cargo run -- trim --run /tmp/run.json --spec trim-spec.json --out fixture.json [--check]
 ```
 
-Test counts to expect: **113 unit tests**, plus **6 install-gated integration
-tests** (3 in `tests/acceptance.rs`, 3 in `tests/real_game.rs`).
+Test counts to expect: **149 unit tests**, plus **8 integration tests** split
+across three files. `tests/acceptance.rs` has 3: two run offline against a
+committed fixture, and one (`the_real_install_reproduces_it_too`) is
+install-gated. `tests/provenance.rs` has 2: one always-on, and one gated on
+the `FACTORIO_ORACLE_PROVENANCE_DIR` environment variable naming another
+repo's fixture directory - not an install gate, so it skips even when
+Factorio is present. `tests/real_game.rs` has 3, all install-gated. That is
+**4 install-gated tests** in total. Without a real Factorio install they skip
+rather than fail, so a green run on a machine with no game proves less than it
+looks. Check which happened before trusting it.
 
 ## Layout
 
@@ -151,9 +159,16 @@ code did. **A fake can only be wrong in the ways its author already considered.*
   The walk joins components with `/` by hand rather than using
   `Path::display()`, so a Windows run and a macOS run produce the same
   committed key.
-- **The walk skips dotfiles, and that is load-bearing on a Mac.** `.DS_Store`
-  appears in any directory a Finder window has opened. Demanding an entry for
-  it would make the check fail on the machine that can fix it and pass in CI.
+- **The walk skips dotfiles and dot-directories, plus two Windows names, and
+  that is load-bearing on both platforms.** `.DS_Store` appears in any
+  directory a Finder window has opened; demanding an entry for it would make
+  the check fail on the machine that can fix it and pass in CI. The skip
+  `continue`s before the directory branch, so a dot-prefixed name is skipped
+  whole even when it is a directory - a consumer keeping fixtures under
+  `.golden/` gets nothing recorded for that subtree, not an error. `Thumbs.db`
+  and `desktop.ini` (matched case-insensitively) are skipped for the same
+  reason on Windows: Explorer writes `Thumbs.db` into any folder of images it
+  has thumbnailed, and MapWebUI's fixture directory holds `.png` files.
 - **`#[serde(flatten)]` works under `arbitrary_precision`.** Measured
   2026-08-17: a struct with two named string fields plus a flattened
   `BTreeMap<String, Value>` parsed a document holding both an integer and a

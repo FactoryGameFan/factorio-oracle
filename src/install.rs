@@ -170,10 +170,14 @@ pub fn matches_version(found: &DiscoveredInstall, version: Option<&str>) -> bool
 /// `factorio` wins over `FACTORIO_BIN`, and either is offered as an extra
 /// candidate root rather than as the only one, which is what `run` has always
 /// done. With no version given, the first install that reported one wins.
+///
+/// Parameters are ordered `factorio` before `env_bin` deliberately, matching
+/// the precedence documented above - so the signature itself shows which one
+/// wins, rather than relying on a reader to check the body.
 pub fn select(
     home: &Path,
-    env_bin: Option<&Path>,
     factorio: Option<&Path>,
+    env_bin: Option<&Path>,
     version: Option<&str>,
 ) -> Option<DiscoveredInstall> {
     discover(home, factorio.or(env_bin))

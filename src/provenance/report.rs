@@ -219,6 +219,32 @@ mod tests {
     }
 
     #[test]
+    fn an_older_fixture_says_the_binary_is_newer_not_the_other_way_round() {
+        // The two standing strings ("{binary} is newer" and "newer than
+        // {binary}") read almost identically and are easy for a human to
+        // swap, so each gets its own exact assertion rather than a shared
+        // substring check.
+        let m = manifest(&[("a.json", "2.1.11")]);
+        let text = render(&compare(&m, "2.1.14"));
+        assert!(
+            text.contains("2.1.14 is newer"),
+            "expected the binary-is-newer wording, got:\n{text}"
+        );
+        assert!(!text.contains("newer than 2.1.14"));
+    }
+
+    #[test]
+    fn a_newer_fixture_says_newer_than_the_binary() {
+        let m = manifest(&[("a.json", "2.1.14")]);
+        let text = render(&compare(&m, "2.0.77"));
+        assert!(
+            text.contains("newer than 2.0.77"),
+            "expected the newer-than-binary wording, got:\n{text}"
+        );
+        assert!(!text.contains("2.0.77 is newer"));
+    }
+
+    #[test]
     fn a_clean_report_says_so_instead_of_printing_a_warning() {
         let m = manifest(&[("a.json", "2.1.14")]);
         let text = render(&compare(&m, "2.1.14"));

@@ -370,4 +370,114 @@ mod tests {
         let names: Vec<&str> = report.malformed.iter().map(|e| e.entry.as_str()).collect();
         assert_eq!(names, vec!["a.md", "z.json"]);
     }
+
+    // `to_json` is the interface a consumer's own test runner reads, per its
+    // own doc comment - and nothing above this point called it. Renaming a
+    // key or swapping `count`/`max` in a message would break every consumer
+    // while every test above still passed, so these check the exact key set
+    // and the exact `ratchet` string for all four states.
+
+    /// The exact key set `to_json` promises. A silent rename fails here
+    /// rather than only in a consumer's test runner.
+    fn assert_exact_keys(json: &serde_json::Value) {
+        let keys: BTreeSet<&str> = json
+            .as_object()
+            .expect("to_json should produce an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        let expected: BTreeSet<&str> = [
+            "ok",
+            "dir",
+            "fixtures",
+            "notFixtures",
+            "missing",
+            "dangling",
+            "malformed",
+            "unknown",
+            "maxUnknown",
+            "ratchet",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(keys, expected, "to_json's key set changed");
+    }
+
+    #[test]
+    fn to_json_reports_the_ok_ratchet() {
+        let m = manifest("1", &[("a.json", "unknown")], &[]);
+        let report = check(&m, &["a.json".to_string()]);
+        let json = report.to_json(Path::new("fixtures"));
+        assert_exact_keys(&json);
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["ratchet"], "ok");
+        assert_eq!(json["maxUnknown"], 1);
+        assert_eq!(json["unknown"], serde_json::json!(["a.json"]));
+    }
+
+    #[test]
+    fn to_json_reports_the_exceeded_ratchet() {
+        let m = manifest("0", &[("a.json", "unknown"), ("b.json", "unknown")], &[]);
+        let report = check(&m, &["a.json".to_string(), "b.json".to_string()]);
+        let json = report.to_json(Path::new("fixtures"));
+        assert_exact_keys(&json);
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["ratchet"], "exceeded");
+        // The Exceeded branch reports `max`, the declared cap, not `count`.
+        // Swapping them is exactly the silent break this test exists to catch.
+        assert_eq!(json["maxUnknown"], 0);
+    }
+
+    #[test]
+    fn to_json_reports_the_slack_ratchet() {
+        let m = manifest("1", &[("a.json", "2.1.14")], &[]);
+        let report = check(&m, &["a.json".to_string()]);
+        let json = report.to_json(Path::new("fixtures"));
+        assert_exact_keys(&json);
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["ratchet"], "slack");
+        assert_eq!(json["maxUnknown"], 1);
+        assert_eq!(json["unknown"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn to_json_reports_the_undeclared_ratchet_with_a_null_max_unknown() {
+        let doc = serde_json::json!({
+            "fixtures": { "a.json": { "factorioVersion": "unknown", "evidence": "x" } },
+        });
+        let m: Manifest = serde_json::from_value(doc).unwrap();
+        let report = check(&m, &["a.json".to_string()]);
+        let json = report.to_json(Path::new("fixtures"));
+        assert_exact_keys(&json);
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["ratchet"], "undeclared");
+        assert_eq!(json["maxUnknown"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn summary_names_a_dangling_entry_when_called_directly() {
+        // Elsewhere summary() is only ever called inside an assert! format
+        // argument, which Rust evaluates only on failure - so a green run
+        // never executed this method without a test that calls it directly.
+        let m = manifest("0", &[("a.json", "2.1.14"), ("gone.json", "2.1.14")], &[]);
+        let report = check(&m, &["a.json".to_string()]);
+        assert_eq!(
+            report.summary(),
+            vec!["entry names a file that is not there: gone.json".to_string()]
+        );
+    }
+
+    #[test]
+    fn summary_states_the_exceeded_ratchet_with_both_numbers() {
+        let m = manifest("1", &[("a.json", "unknown"), ("b.json", "unknown")], &[]);
+        let report = check(&m, &["a.json".to_string(), "b.json".to_string()]);
+        assert_eq!(
+            report.summary(),
+            vec![
+                "2 entries record an unknown version, and the manifest allows 1. \
+                 Re-capture against a known binary rather than raising maxUnknown."
+                    .to_string()
+            ]
+        );
+    }
 }

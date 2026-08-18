@@ -16,16 +16,37 @@ pub mod report;
 
 use std::path::Path;
 
+/// Files (and, since the check fires before the directory branch below,
+/// directories too) that are operating-system detritus rather than something
+/// any repo tracks. `Thumbs.db` and `desktop.ini` are Windows' equivalent of
+/// `.DS_Store`: Explorer writes `Thumbs.db` into any folder of images it has
+/// thumbnailed, which is exactly what a fixture directory full of `.png`
+/// files invites. Compared case-insensitively because Windows filesystems are
+/// case-insensitive, so `THUMBS.DB` is the same file.
+///
+/// Deliberately just these three names, not an open-ended list: a skip that
+/// costs nothing is how ground truth goes unrecorded, which is the exact
+/// failure this whole feature exists to prevent. Widening this list is a
+/// deliberate, reviewed decision each time, not a place to accumulate names.
+const OS_DETRITUS: &[&str] = &["Thumbs.db", "desktop.ini"];
+
+fn is_skipped(name: &str) -> bool {
+    name.starts_with('.') || OS_DETRITUS.iter().any(|d| name.eq_ignore_ascii_case(d))
+}
+
 /// Every file under `root`, as a path relative to `root` with forward slashes,
 /// sorted.
 ///
 /// Two exclusions, both deliberate:
 ///
 /// - The manifest itself. It is the record, not the record's subject.
-/// - Anything whose name starts with a dot. `.DS_Store` appears in any
-///   directory a Finder window has opened, so demanding an entry for it would
-///   make this fail on a Mac and pass in CI. A check that fails only on the
-///   machine that can fix it is worse than no check.
+/// - Operating-system detritus: dotfiles (and dot-directories - the `continue`
+///   below fires before the directory branch, so a consumer's `.golden/`
+///   fixtures are skipped too, not just `.DS_Store`), plus `Thumbs.db` and
+///   `desktop.ini` on Windows. `.DS_Store` appears in any directory a Finder
+///   window has opened, so demanding an entry for it would make this fail on
+///   a Mac and pass in CI. A check that fails only on the machine that can fix
+///   it is worse than no check.
 pub fn walk_fixtures(root: &Path) -> std::io::Result<Vec<String>> {
     let mut out = Vec::new();
     collect(root, root, &mut out)?;
@@ -36,7 +57,7 @@ pub fn walk_fixtures(root: &Path) -> std::io::Result<Vec<String>> {
 fn collect(root: &Path, dir: &Path, out: &mut Vec<String>) -> std::io::Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
-        if entry.file_name().to_string_lossy().starts_with('.') {
+        if is_skipped(&entry.file_name().to_string_lossy()) {
             continue;
         }
         let path = entry.path();
@@ -100,6 +121,34 @@ mod tests {
         write(root, "a.json");
         write(root, manifest::MANIFEST_NAME);
         write(root, ".DS_Store");
+        assert_eq!(walk_fixtures(root).unwrap(), vec!["a.json".to_string()]);
+    }
+
+    #[test]
+    fn leaves_out_windows_os_detritus_case_insensitively() {
+        // Thumbs.db and desktop.ini are Windows' equivalent of .DS_Store, and
+        // Windows filesystems are case-insensitive, so a differently-cased
+        // name has to be caught too.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(root, "a.json");
+        write(root, "Thumbs.db");
+        write(root, "THUMBS.DB");
+        write(root, "desktop.ini");
+        write(root, "Desktop.Ini");
+        assert_eq!(walk_fixtures(root).unwrap(), vec!["a.json".to_string()]);
+    }
+
+    #[test]
+    fn a_dot_directory_is_skipped_whole_not_just_the_dotfile() {
+        // The `continue` in `collect` fires before the directory branch, so a
+        // consumer keeping fixtures under `.golden/` gets nothing recorded
+        // for the whole subtree rather than an error - this is what proves
+        // that behaviour rather than just asserting it in a comment.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(root, "a.json");
+        write(root, ".golden/b.json");
         assert_eq!(walk_fixtures(root).unwrap(), vec!["a.json".to_string()]);
     }
 }

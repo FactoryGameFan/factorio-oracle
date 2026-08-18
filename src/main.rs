@@ -136,8 +136,8 @@ fn main() -> anyhow::Result<()> {
 
             let chosen = install::select(
                 &home,
-                env_bin.as_deref(),
                 factorio.as_deref(),
+                env_bin.as_deref(),
                 version.as_deref(),
             )
             .ok_or_else(|| anyhow::anyhow!("no Factorio install matched"))?;
@@ -284,8 +284,8 @@ fn main() -> anyhow::Result<()> {
             // failing build.
             let chosen = install::select(
                 &home,
-                env_bin.as_deref(),
                 factorio.as_deref(),
+                env_bin.as_deref(),
                 version.as_deref(),
             )
             .ok_or_else(|| {
