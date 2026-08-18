@@ -45,7 +45,7 @@ cargo run -- run  --probe dump-data.json --work-dir /tmp/w > /tmp/run.json
 cargo run -- trim --run /tmp/run.json --spec trim-spec.json --out fixture.json [--check]
 ```
 
-Test counts to expect: **149 unit tests**, plus **8 integration tests** split
+Test counts to expect: **159 unit tests**, plus **8 integration tests** split
 across three files. `tests/acceptance.rs` has 3: two run offline against a
 committed fixture, and one (`the_real_install_reproduces_it_too`) is
 install-gated. `tests/provenance.rs` has 2: one always-on, and one gated on
