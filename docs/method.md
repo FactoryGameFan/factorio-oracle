@@ -219,10 +219,35 @@ that it should be an expected outcome rather than a surprise.
   seeing ungenerated chunks, which an editor does not have to care about. Its
   map editor floor, 0.1, is the number that transfers.
 - **#141**, where the measured half turned out not to be a geometry at all.
-- **PR #222**, where the premise was that a blueprint's grid position moves its
-  entities. It does not.
+- **PR #222**, where the premise was that setting
+  `blueprint_position_relative_to_grid` moves a blueprint's entities. It does
+  not - the game writes the key and leaves the coordinates alone.
 
 A probe that only ever confirms the plan is not being pointed at anything.
+
+## Name the attribute, not the concept, when the game ships a label with the same words
+
+That PR #222 entry read "a blueprint's grid position moves its entities. It does
+not" until 2026-08-21, and the wording turned out to matter more than the
+finding. Factorio's blueprint GUI has a field labelled exactly **Grid position**;
+it is a different thing from the attribute that probe set, and it *does* move the
+entities. Of the panel's three X/Y pairs it is the only one that writes no key
+into the export at all - it translates the entity and tile coordinates instead,
+which is why nothing in `runtime-api.json` can reach it.
+
+So a sentence that was true of the attribute read as a refutation of the field. A
+reviewer working on `factorio-blueprint-editor` PR #243 found the shipped code
+and this document apparently contradicting each other, when neither was wrong,
+and the cost was an interactive probe built to settle a conflict that did not
+exist. It was still worth building - it measured the real rule, which is
+`-floor(min corner) = T` over entity **edges** and tiles, and caught the editor
+reading centres - but the question it was pointed at came from a wording.
+
+The fixtures are `blueprint-grid-position.json` (the attribute) and
+`blueprint-grid-position-gui.json` (the field), and the second carries a
+`supersedes` block saying they answer different questions. Two measurements that
+seem to contradict each other are worth re-reading for a name collision before
+either is treated as wrong.
 
 ## An inversion is a model, and a wrong one still returns a full set of numbers
 
