@@ -20,9 +20,11 @@ they did not have before.
 
 ## Prerequisites
 
-- Rust **1.97.1**, pinned in `rust-toolchain.toml`. The pin exists so a shared
-  tool four repos depend on does not change behaviour because a contributor has
-  a different rustup default.
+- The Rust version pinned in `rust-toolchain.toml` - read the `channel` line
+  there rather than a number here, because Renovate moves that pin and this line
+  went stale the first time it did. The pin exists so a shared tool four repos
+  depend on does not change behaviour because a contributor has a different
+  rustup default.
 - A real Factorio install for the integration tests. Without one they skip
   rather than fail, so a green run on a machine with no game proves less than it
   looks. Check which happened before trusting it.
