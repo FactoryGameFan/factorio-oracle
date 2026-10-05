@@ -3,6 +3,6 @@
 # wasm, so the reason here is weaker - but a shared tool that four repos rely on
 # should not change behaviour because a contributor has a different rustup default.
 [toolchain]
-channel = "1.98.1"
+channel = "1.99.0"
 components = ["rustfmt", "clippy"]
 profile = "minimal"
