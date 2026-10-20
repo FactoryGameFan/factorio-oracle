@@ -28,6 +28,13 @@ pub fn normalise_numbers(value: &Value) -> Value {
             let literal = number.as_str();
             let is_float = literal.contains('.') || literal.contains('e') || literal.contains('E');
             if !is_float {
+                // serde_json 1.0.152 keeps `-0` as written under
+                // arbitrary_precision, where 1.0.151 turned it into `0`.
+                // Python reads `-0` as the int 0 and writes `0`, so match it.
+                // Measured 2026-10-20: 87 `-0` literals in a 2.0.77 dump.
+                if literal == "-0" {
+                    return Value::Number(0.into());
+                }
                 return value.clone();
             }
             match literal.parse::<f64>() {
@@ -85,6 +92,14 @@ mod tests {
         let value: Value = serde_json::from_str(&format!("[{LONG_A}, {LONG_B}]")).unwrap();
         let text = to_canonical_json(&normalise_numbers(&value));
         assert_eq!(text, "[\n  0.3945,\n  0.49610000000000004\n]\n");
+    }
+
+    #[test]
+    fn negative_zero_integer_prints_as_python_does() {
+        // Python reads `-0` as the int 0. `-0.0` stays a float and keeps its sign.
+        let value: Value = serde_json::from_str("[-0, -0.0, 0]").unwrap();
+        let text = to_canonical_json(&normalise_numbers(&value));
+        assert_eq!(text, "[\n  0,\n  -0.0,\n  0\n]\n");
     }
 
     #[test]
