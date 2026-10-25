@@ -6,14 +6,16 @@
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
 
   // Supplies config:recommended, helpers:pinGitHubActionDigests, the
-  // America/Los_Angeles timezone, the "before 6am on monday" batch,
-  // automerge:false, prConcurrentLimit/prHourlyLimit, dependencyDashboard,
+  // America/Los_Angeles timezone, the weekly batch from noon Sunday to noon
+  // Monday, automerge:false, prConcurrentLimit/prHourlyLimit, dependencyDashboard,
   // osvVulnerabilityAlerts, the rule that security fixes skip the weekly
   // window, and the github-actions grouping.
   // Source: https://github.com/FactoryGameFan/.github/blob/main/renovate-config.json
   //
-  // The Monday window this replaces was `* 0-8 * * 1`, i.e. midnight to 8am;
-  // the preset's "before 6am on monday" is the same idea, two hours tighter.
+  // History: before this repo took the preset, its own window was `* 0-8 * * 1`,
+  // Monday from midnight until 9am (the 8am hour is included). The preset then
+  // used "before 6am on monday", the same idea three hours tighter. The preset
+  // has since widened its window, so that comparison no longer describes it.
   //
   // pinGitHubActionDigests is NEW here and is the org rule rather than a
   // preference of this repo: three sibling repos already pin actions to a
