@@ -13,9 +13,9 @@
   // Source: https://github.com/FactoryGameFan/.github/blob/main/renovate-config.json
   //
   // History: before this repo took the preset, its own window was `* 0-8 * * 1`,
-  // midnight to 8am Monday. The preset then used "before 6am on monday", the same
-  // idea two hours tighter. The preset has since widened its window, so that
-  // comparison no longer describes it.
+  // Monday from midnight until 9am (the 8am hour is included). The preset then
+  // used "before 6am on monday", the same idea three hours tighter. The preset
+  // has since widened its window, so that comparison no longer describes it.
   //
   // pinGitHubActionDigests is NEW here and is the org rule rather than a
   // preference of this repo: three sibling repos already pin actions to a
